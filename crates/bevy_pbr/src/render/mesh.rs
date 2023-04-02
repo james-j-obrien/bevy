@@ -132,7 +132,7 @@ pub struct MeshUniform {
 // NOTE: These must match the bit flags in bevy_pbr/src/render/mesh_types.wgsl!
 bitflags::bitflags! {
     #[repr(transparent)]
-    struct MeshFlags: u32 {
+    pub struct MeshFlags: u32 {
         const SHADOW_RECEIVER            = (1 << 0);
         // Indicates the sign of the determinant of the 3x3 model matrix. If the sign is positive,
         // then the flag should be set, else it should not be set.
