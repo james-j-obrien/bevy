@@ -7,9 +7,7 @@ use crate::{
     archetype::{Archetype, ArchetypeComponentId, Archetypes},
     bundle::Bundles,
     change_detection::{MutUntyped, Ticks, TicksMut},
-    component::{
-        ComponentId, ComponentStorage, ComponentTicks, Components, StorageType, Tick, TickCells,
-    },
+    component::{ComponentStorage, ComponentTicks, Components, StorageType, Tick, TickCells},
     entity::{Entities, Entity, EntityLocation},
     prelude::Component,
     storage::{Column, ComponentSparseSet, Storages},
@@ -282,7 +280,7 @@ impl<'w> UnsafeWorldCell<'w> {
     #[inline]
     pub(crate) fn get_resource_archetype_component_id(
         self,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<ArchetypeComponentId> {
         // SAFETY:
         // - we only access world metadata
@@ -297,7 +295,7 @@ impl<'w> UnsafeWorldCell<'w> {
     #[inline]
     pub(crate) fn get_non_send_archetype_component_id(
         self,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<ArchetypeComponentId> {
         // SAFETY:
         // - we only access world metadata
@@ -346,7 +344,7 @@ impl<'w> UnsafeWorldCell<'w> {
     /// - the [`UnsafeWorldCell`] has permission to access the resource
     /// - no mutable reference to the resource exists at the same time
     #[inline]
-    pub unsafe fn get_resource_by_id(self, component_id: ComponentId) -> Option<Ptr<'w>> {
+    pub unsafe fn get_resource_by_id(self, component_id: Entity) -> Option<Ptr<'w>> {
         // SAFETY: caller ensures that `self` has permission to access `R`
         //  caller ensures that no mutable reference exists to `R`
         unsafe { self.storages() }
@@ -388,7 +386,7 @@ impl<'w> UnsafeWorldCell<'w> {
     /// - the [`UnsafeWorldCell`] has permission to access the resource
     /// - no mutable reference to the resource exists at the same time
     #[inline]
-    pub unsafe fn get_non_send_resource_by_id(self, component_id: ComponentId) -> Option<Ptr<'w>> {
+    pub unsafe fn get_non_send_resource_by_id(self, component_id: Entity) -> Option<Ptr<'w>> {
         // SAFETY: we only access data on world that the caller has ensured is unaliased and we have
         //  permission to access.
         unsafe { self.storages() }
@@ -428,10 +426,7 @@ impl<'w> UnsafeWorldCell<'w> {
     /// - the [`UnsafeWorldCell`] has permission to access the resource mutably
     /// - no other references to the resource exist at the same time
     #[inline]
-    pub unsafe fn get_resource_mut_by_id(
-        self,
-        component_id: ComponentId,
-    ) -> Option<MutUntyped<'w>> {
+    pub unsafe fn get_resource_mut_by_id(self, component_id: Entity) -> Option<MutUntyped<'w>> {
         // SAFETY: we only access data that the caller has ensured is unaliased and `self`
         //  has permission to access.
         let (ptr, ticks) = unsafe { self.storages() }
@@ -491,7 +486,7 @@ impl<'w> UnsafeWorldCell<'w> {
     #[inline]
     pub unsafe fn get_non_send_resource_mut_by_id(
         self,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<MutUntyped<'w>> {
         let change_tick = self.change_tick();
         // SAFETY: we only access data that the caller has ensured is unaliased and `self`
@@ -523,7 +518,7 @@ impl<'w> UnsafeWorldCell<'w> {
     #[inline]
     pub(crate) unsafe fn get_resource_with_ticks(
         self,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<(Ptr<'w>, TickCells<'w>)> {
         // SAFETY:
         // - caller ensures there is no `&mut World`
@@ -547,7 +542,7 @@ impl<'w> UnsafeWorldCell<'w> {
     #[inline]
     pub(crate) unsafe fn get_non_send_with_ticks(
         self,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<(Ptr<'w>, TickCells<'w>)> {
         // SAFETY:
         // - caller ensures there is no `&mut World`
@@ -635,7 +630,7 @@ impl<'w> UnsafeEntityCell<'w> {
     /// - If you know the component's [`TypeId`] but not its [`ComponentId`], consider using
     /// [`Self::contains_type_id`].
     #[inline]
-    pub fn contains_id(self, component_id: ComponentId) -> bool {
+    pub fn contains_id(self, component_id: Entity) -> bool {
         self.archetype().contains(component_id)
     }
 
@@ -746,10 +741,7 @@ impl<'w> UnsafeEntityCell<'w> {
     /// - the [`UnsafeEntityCell`] has permission to access the component
     /// - no other mutable references to the component exist at the same time
     #[inline]
-    pub unsafe fn get_change_ticks_by_id(
-        &self,
-        component_id: ComponentId,
-    ) -> Option<ComponentTicks> {
+    pub unsafe fn get_change_ticks_by_id(&self, component_id: Entity) -> Option<ComponentTicks> {
         let info = self.world.components().get_info(component_id)?;
         // SAFETY:
         // - entity location and entity is valid
@@ -824,7 +816,7 @@ impl<'w> UnsafeEntityCell<'w> {
     /// - the [`UnsafeEntityCell`] has permission to access the component
     /// - no other mutable references to the component exist at the same time
     #[inline]
-    pub unsafe fn get_by_id(self, component_id: ComponentId) -> Option<Ptr<'w>> {
+    pub unsafe fn get_by_id(self, component_id: Entity) -> Option<Ptr<'w>> {
         let info = self.world.components().get_info(component_id)?;
         // SAFETY: entity_location is valid, component_id is valid as checked by the line above
         unsafe {
@@ -849,7 +841,7 @@ impl<'w> UnsafeEntityCell<'w> {
     /// - the [`UnsafeEntityCell`] has permission to access the component mutably
     /// - no other references to the component exist at the same time
     #[inline]
-    pub unsafe fn get_mut_by_id(self, component_id: ComponentId) -> Option<MutUntyped<'w>> {
+    pub unsafe fn get_mut_by_id(self, component_id: Entity) -> Option<MutUntyped<'w>> {
         let info = self.world.components().get_info(component_id)?;
         // SAFETY: entity_location is valid, component_id is valid as checked by the line above
         unsafe {
@@ -882,7 +874,7 @@ impl<'w> UnsafeWorldCell<'w> {
     unsafe fn fetch_table(
         self,
         location: EntityLocation,
-        component_id: ComponentId,
+        component_id: Entity,
     ) -> Option<&'w Column> {
         // SAFETY: caller ensures returned data is not misused and we have not created any borrows
         // of component/resource data
@@ -894,7 +886,7 @@ impl<'w> UnsafeWorldCell<'w> {
     /// - the returned `ComponentSparseSet` is only used in ways that this [`UnsafeWorldCell`] has permission for.
     /// - the returned `ComponentSparseSet` is only used in ways that would not conflict with any existing
     ///   borrows of world data.
-    unsafe fn fetch_sparse_set(self, component_id: ComponentId) -> Option<&'w ComponentSparseSet> {
+    unsafe fn fetch_sparse_set(self, component_id: Entity) -> Option<&'w ComponentSparseSet> {
         // SAFETY: caller ensures returned data is not misused and we have not created any borrows
         // of component/resource data
         unsafe { self.storages() }.sparse_sets.get(component_id)
@@ -913,7 +905,7 @@ impl<'w> UnsafeWorldCell<'w> {
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn get_component(
     world: UnsafeWorldCell<'_>,
-    component_id: ComponentId,
+    component_id: Entity,
     storage_type: StorageType,
     entity: Entity,
     location: EntityLocation,
@@ -940,7 +932,7 @@ unsafe fn get_component(
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn get_component_and_ticks(
     world: UnsafeWorldCell<'_>,
-    component_id: ComponentId,
+    component_id: Entity,
     storage_type: StorageType,
     entity: Entity,
     location: EntityLocation,
@@ -974,7 +966,7 @@ unsafe fn get_component_and_ticks(
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn get_ticks(
     world: UnsafeWorldCell<'_>,
-    component_id: ComponentId,
+    component_id: Entity,
     storage_type: StorageType,
     entity: Entity,
     location: EntityLocation,

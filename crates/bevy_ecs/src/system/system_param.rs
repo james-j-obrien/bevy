@@ -4,7 +4,7 @@ use crate::{
     bundle::Bundles,
     change_detection::{Ticks, TicksMut},
     component::{ComponentId, ComponentTicks, Components, Tick},
-    entity::Entities,
+    entity::{Entities, Entity},
     query::{
         Access, FilteredAccess, FilteredAccessSet, QueryState, ReadOnlyWorldQuery, WorldQuery,
     },
@@ -209,8 +209,8 @@ fn assert_component_access_compatibility(
     system_name: &str,
     query_type: &'static str,
     filter_type: &'static str,
-    system_access: &FilteredAccessSet<ComponentId>,
-    current: &FilteredAccess<ComponentId>,
+    system_access: &FilteredAccessSet<Entity>,
+    current: &FilteredAccess<Entity>,
     world: &World,
 ) {
     let conflicts = system_access.get_conflicts_single(current);
@@ -412,7 +412,7 @@ unsafe impl<'a, T: Resource> ReadOnlySystemParam for Res<'a, T> {}
 // SAFETY: Res ComponentId and ArchetypeComponentId access is applied to SystemMeta. If this Res
 // conflicts with any prior access, a panic will occur.
 unsafe impl<'a, T: Resource> SystemParam for Res<'a, T> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = Res<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -471,7 +471,7 @@ unsafe impl<'a, T: Resource> ReadOnlySystemParam for Option<Res<'a, T>> {}
 
 // SAFETY: this impl defers to `Res`, which initializes and validates the correct world access.
 unsafe impl<'a, T: Resource> SystemParam for Option<Res<'a, T>> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = Option<Res<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -502,7 +502,7 @@ unsafe impl<'a, T: Resource> SystemParam for Option<Res<'a, T>> {
 // SAFETY: Res ComponentId and ArchetypeComponentId access is applied to SystemMeta. If this Res
 // conflicts with any prior access, a panic will occur.
 unsafe impl<'a, T: Resource> SystemParam for ResMut<'a, T> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = ResMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -561,7 +561,7 @@ unsafe impl<'a, T: Resource> SystemParam for ResMut<'a, T> {
 
 // SAFETY: this impl defers to `ResMut`, which initializes and validates the correct world access.
 unsafe impl<'a, T: Resource> SystemParam for Option<ResMut<'a, T>> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = Option<ResMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -986,7 +986,7 @@ impl<'a, T> From<NonSendMut<'a, T>> for NonSend<'a, T> {
 // SAFETY: NonSendComponentId and ArchetypeComponentId access is applied to SystemMeta. If this
 // NonSend conflicts with any prior access, a panic will occur.
 unsafe impl<'a, T: 'static> SystemParam for NonSend<'a, T> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = NonSend<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -1045,7 +1045,7 @@ unsafe impl<T: 'static> ReadOnlySystemParam for Option<NonSend<'_, T>> {}
 
 // SAFETY: this impl defers to `NonSend`, which initializes and validates the correct world access.
 unsafe impl<T: 'static> SystemParam for Option<NonSend<'_, T>> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = Option<NonSend<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -1073,7 +1073,7 @@ unsafe impl<T: 'static> SystemParam for Option<NonSend<'_, T>> {
 // SAFETY: NonSendMut ComponentId and ArchetypeComponentId access is applied to SystemMeta. If this
 // NonSendMut conflicts with any prior access, a panic will occur.
 unsafe impl<'a, T: 'static> SystemParam for NonSendMut<'a, T> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = NonSendMut<'w, T>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
@@ -1129,7 +1129,7 @@ unsafe impl<'a, T: 'static> SystemParam for NonSendMut<'a, T> {
 
 // SAFETY: this impl defers to `NonSendMut`, which initializes and validates the correct world access.
 unsafe impl<'a, T: 'static> SystemParam for Option<NonSendMut<'a, T>> {
-    type State = ComponentId;
+    type State = Entity;
     type Item<'w, 's> = Option<NonSendMut<'w, T>>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {

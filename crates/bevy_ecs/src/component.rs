@@ -3,7 +3,8 @@
 use crate::{
     self as bevy_ecs,
     change_detection::MAX_CHANGE_AGE,
-    storage::{SparseSetIndex, Storages},
+    entity::Entity,
+    storage::{SparseSet, SparseSetIndex, Storages},
     system::{Local, Resource, SystemParam},
     world::{FromWorld, World},
     TypeIdMap,
@@ -204,15 +205,15 @@ pub enum StorageType {
 /// Stores metadata for a type of component or resource stored in a specific [`World`].
 #[derive(Debug)]
 pub struct ComponentInfo {
-    id: ComponentId,
+    entity: Entity,
     descriptor: ComponentDescriptor,
 }
 
 impl ComponentInfo {
     /// Returns a value uniquely identifying the current component.
     #[inline]
-    pub fn id(&self) -> ComponentId {
-        self.id
+    pub fn id(&self) -> Entity {
+        self.entity
     }
 
     /// Returns the name of the current component.
@@ -260,8 +261,8 @@ impl ComponentInfo {
     }
 
     /// Create a new [`ComponentInfo`].
-    pub(crate) fn new(id: ComponentId, descriptor: ComponentDescriptor) -> Self {
-        ComponentInfo { id, descriptor }
+    pub(crate) fn new(entity: Entity, descriptor: ComponentDescriptor) -> Self {
+        ComponentInfo { entity, descriptor }
     }
 }
 
@@ -433,9 +434,9 @@ impl ComponentDescriptor {
 /// Stores metadata associated with each kind of [`Component`] in a given [`World`].
 #[derive(Debug, Default)]
 pub struct Components {
-    components: Vec<ComponentInfo>,
-    indices: TypeIdMap<usize>,
-    resource_indices: TypeIdMap<usize>,
+    components: SparseSet<Entity, ComponentInfo>,
+    indices: TypeIdMap<Entity>,
+    resource_indices: TypeIdMap<Entity>,
 }
 
 impl Components {
@@ -443,7 +444,11 @@ impl Components {
     /// If a component of this type has already been initialized, this will return
     /// the ID of the pre-existing component.
     #[inline]
-    pub fn init_component<T: Component>(&mut self, storages: &mut Storages) -> ComponentId {
+    pub fn init_component<T: Component>(
+        &mut self,
+        storages: &mut Storages,
+        reserve_entity: impl FnOnce() -> Entity,
+    ) -> Entity {
         let type_id = TypeId::of::<T>();
 
         let Components {
@@ -451,10 +456,17 @@ impl Components {
             components,
             ..
         } = self;
-        let index = indices.entry(type_id).or_insert_with(|| {
-            Components::init_component_inner(components, storages, ComponentDescriptor::new::<T>())
+        let entity = indices.entry(type_id).or_insert_with(|| {
+            let entity = reserve_entity();
+            Components::init_component_inner(
+                entity,
+                components,
+                storages,
+                ComponentDescriptor::new::<T>(),
+            );
+            entity
         });
-        ComponentId(*index)
+        *entity
     }
 
     /// Initializes a component described by `descriptor`.
@@ -465,26 +477,25 @@ impl Components {
     /// will be created for each one.
     pub fn init_component_with_descriptor(
         &mut self,
+        entity: Entity,
         storages: &mut Storages,
         descriptor: ComponentDescriptor,
-    ) -> ComponentId {
-        let index = Components::init_component_inner(&mut self.components, storages, descriptor);
-        ComponentId(index)
+    ) {
+        Components::init_component_inner(entity, &mut self.components, storages, descriptor);
     }
 
     #[inline]
     fn init_component_inner(
-        components: &mut Vec<ComponentInfo>,
+        entity: Entity,
+        components: &mut SparseSet<Entity, ComponentInfo>,
         storages: &mut Storages,
         descriptor: ComponentDescriptor,
-    ) -> usize {
-        let index = components.len();
-        let info = ComponentInfo::new(ComponentId(index), descriptor);
+    ) {
+        let info = ComponentInfo::new(entity, descriptor);
         if info.descriptor.storage_type == StorageType::SparseSet {
             storages.sparse_sets.get_or_insert(&info);
         }
-        components.push(info);
-        index
+        components.insert(entity, info);
     }
 
     /// Returns the number of components registered with this instance.
@@ -503,37 +514,36 @@ impl Components {
     ///
     /// This will return an incorrect result if `id` did not come from the same world as `self`. It may return `None` or a garbage value.
     #[inline]
-    pub fn get_info(&self, id: ComponentId) -> Option<&ComponentInfo> {
-        self.components.get(id.0)
+    pub fn get_info(&self, entity: Entity) -> Option<&ComponentInfo> {
+        self.components.get(entity)
     }
 
     /// Returns the name associated with the given component.
     ///
-    /// This will return an incorrect result if `id` did not come from the same world as `self`. It may return `None` or a garbage value.
+    /// This will return an incorrect result if `entity` did not come from the same world as `self`. It may return `None` or a garbage value.
     #[inline]
-    pub fn get_name(&self, id: ComponentId) -> Option<&str> {
-        self.get_info(id).map(|descriptor| descriptor.name())
+    pub fn get_name(&self, entity: Entity) -> Option<&str> {
+        self.get_info(entity).map(|descriptor| descriptor.name())
     }
 
     /// Gets the metadata associated with the given component.
     /// # Safety
     ///
-    /// `id` must be a valid [`ComponentId`]
+    /// `entity` must be a valid [`Component`] entity.
     #[inline]
-    pub unsafe fn get_info_unchecked(&self, id: ComponentId) -> &ComponentInfo {
-        debug_assert!(id.index() < self.components.len());
-        self.components.get_unchecked(id.0)
+    pub unsafe fn get_info_unchecked(&self, entity: Entity) -> &ComponentInfo {
+        self.components.get_unchecked(entity)
     }
 
     /// Type-erased equivalent of [`Components::component_id`].
     #[inline]
-    pub fn get_id(&self, type_id: TypeId) -> Option<ComponentId> {
-        self.indices.get(&type_id).map(|index| ComponentId(*index))
+    pub fn get_id(&self, type_id: TypeId) -> Option<Entity> {
+        self.indices.get(&type_id).map(|entity| *entity)
     }
 
-    /// Returns the [`ComponentId`] of the given [`Component`] type `T`.
+    /// Returns the [`Entity`] of the given [`Component`] type `T`.
     ///
-    /// The returned `ComponentId` is specific to the `Components` instance
+    /// The returned `Entity` is specific to the `Components` instance
     /// it was retrieved from and should not be used with another `Components`
     /// instance.
     ///
@@ -553,21 +563,19 @@ impl Components {
     /// assert_eq!(component_a_id, world.components().component_id::<ComponentA>().unwrap())
     /// ```
     #[inline]
-    pub fn component_id<T: Component>(&self) -> Option<ComponentId> {
+    pub fn component_id<T: Component>(&self) -> Option<Entity> {
         self.get_id(TypeId::of::<T>())
     }
 
     /// Type-erased equivalent of [`Components::resource_id`].
     #[inline]
-    pub fn get_resource_id(&self, type_id: TypeId) -> Option<ComponentId> {
-        self.resource_indices
-            .get(&type_id)
-            .map(|index| ComponentId(*index))
+    pub fn get_resource_id(&self, type_id: TypeId) -> Option<Entity> {
+        self.resource_indices.get(&type_id).map(|index| *index)
     }
 
-    /// Returns the [`ComponentId`] of the given [`Resource`] type `T`.
+    /// Returns the [`Entity`] of the given [`Resource`] type `T`.
     ///
-    /// The returned `ComponentId` is specific to the `Components` instance
+    /// The returned `Entity` is specific to the `Components` instance
     /// it was retrieved from and should not be used with another `Components`
     /// instance.
     ///
@@ -587,7 +595,7 @@ impl Components {
     /// assert_eq!(resource_a_id, world.components().resource_id::<ResourceA>().unwrap())
     /// ```
     #[inline]
-    pub fn resource_id<T: Resource>(&self) -> Option<ComponentId> {
+    pub fn resource_id<T: Resource>(&self) -> Option<Entity> {
         self.get_resource_id(TypeId::of::<T>())
     }
 
@@ -595,10 +603,10 @@ impl Components {
     /// If a resource of this type has already been initialized, this will return
     /// the ID of the pre-existing resource.
     #[inline]
-    pub fn init_resource<T: Resource>(&mut self) -> ComponentId {
+    pub fn init_resource<T: Resource>(&mut self, entity: impl FnOnce() -> Entity) -> Entity {
         // SAFETY: The [`ComponentDescriptor`] matches the [`TypeId`]
         unsafe {
-            self.get_or_insert_resource_with(TypeId::of::<T>(), || {
+            self.get_or_insert_resource_with(TypeId::of::<T>(), entity, || {
                 ComponentDescriptor::new_resource::<T>()
             })
         }
@@ -608,10 +616,10 @@ impl Components {
     /// If a resource of this type has already been initialized, this will return
     /// the ID of the pre-existing resource.
     #[inline]
-    pub fn init_non_send<T: Any>(&mut self) -> ComponentId {
+    pub fn init_non_send<T: Any>(&mut self, entity: impl FnOnce() -> Entity) -> Entity {
         // SAFETY: The [`ComponentDescriptor`] matches the [`TypeId`]
         unsafe {
-            self.get_or_insert_resource_with(TypeId::of::<T>(), || {
+            self.get_or_insert_resource_with(TypeId::of::<T>(), entity, || {
                 ComponentDescriptor::new_non_send::<T>(StorageType::default())
             })
         }
@@ -624,22 +632,24 @@ impl Components {
     unsafe fn get_or_insert_resource_with(
         &mut self,
         type_id: TypeId,
+        entity: impl FnOnce() -> Entity,
         func: impl FnOnce() -> ComponentDescriptor,
-    ) -> ComponentId {
+    ) -> Entity {
         let components = &mut self.components;
         let index = self.resource_indices.entry(type_id).or_insert_with(|| {
+            let entity = entity();
             let descriptor = func();
             let index = components.len();
-            components.push(ComponentInfo::new(ComponentId(index), descriptor));
-            index
+            components.insert(entity, ComponentInfo::new(entity, descriptor));
+            entity
         });
 
-        ComponentId(*index)
+        *index
     }
 
     /// Gets an iterator over all components registered with this instance.
     pub fn iter(&self) -> impl Iterator<Item = &ComponentInfo> + '_ {
-        self.components.iter()
+        self.components.values()
     }
 }
 
@@ -812,30 +822,30 @@ impl ComponentTicks {
 pub struct ComponentIdFor<'s, T: Component>(Local<'s, InitComponentId<T>>);
 
 impl<T: Component> ComponentIdFor<'_, T> {
-    /// Gets the [`ComponentId`] for the type `T`.
+    /// Gets the [`Entity`] for the type `T`.
     #[inline]
-    pub fn get(&self) -> ComponentId {
+    pub fn get(&self) -> Entity {
         **self
     }
 }
 
 impl<T: Component> std::ops::Deref for ComponentIdFor<'_, T> {
-    type Target = ComponentId;
+    type Target = Entity;
     fn deref(&self) -> &Self::Target {
         &self.0.component_id
     }
 }
 
-impl<T: Component> From<ComponentIdFor<'_, T>> for ComponentId {
+impl<T: Component> From<ComponentIdFor<'_, T>> for Entity {
     #[inline]
-    fn from(to_component_id: ComponentIdFor<T>) -> ComponentId {
+    fn from(to_component_id: ComponentIdFor<T>) -> Entity {
         *to_component_id
     }
 }
 
-/// Initializes the [`ComponentId`] for a specific type when used with [`FromWorld`].
+/// Initializes the [`Entity`] for a specific type when used with [`FromWorld`].
 struct InitComponentId<T: Component> {
-    component_id: ComponentId,
+    component_id: Entity,
     marker: PhantomData<T>,
 }
 

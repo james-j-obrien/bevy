@@ -155,6 +155,7 @@ mod tests {
         <FooBundle as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
+            &mut || world.entities.reserve_entity(),
             &mut |id| {
                 ids.push(id);
             },
@@ -209,6 +210,7 @@ mod tests {
         <NestedBundle as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
+            &mut || world.entities.reserve_entity(),
             &mut |id| {
                 ids.push(id);
             },
@@ -265,6 +267,7 @@ mod tests {
         <BundleWithIgnored as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
+            &mut || world.entities.reserve_entity(),
             &mut |id| {
                 ids.push(id);
             },
@@ -1374,7 +1377,7 @@ mod tests {
         let mut world = World::new();
         let query = world.query_filtered::<&mut A, Changed<B>>();
 
-        let mut expected = FilteredAccess::<ComponentId>::default();
+        let mut expected = FilteredAccess::<Entity>::default();
         let a_id = world.components.get_id(TypeId::of::<A>()).unwrap();
         let b_id = world.components.get_id(TypeId::of::<B>()).unwrap();
         expected.add_write(a_id);
