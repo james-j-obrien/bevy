@@ -145,7 +145,7 @@ pub unsafe trait Bundle: DynamicBundle + Send + Sync + 'static {
     fn component_ids(
         components: &mut Components,
         storages: &mut Storages,
-        reserve_entity: &mut impl FnMut() -> Entity,
+        reserve_component: &mut impl FnMut() -> Entity,
         ids: &mut impl FnMut(Entity),
     );
 
@@ -183,10 +183,10 @@ unsafe impl<C: Component> Bundle for C {
     fn component_ids(
         components: &mut Components,
         storages: &mut Storages,
-        reserve_entity: &mut impl FnMut() -> Entity,
+        reserve_component: &mut impl FnMut() -> Entity,
         ids: &mut impl FnMut(Entity),
     ) {
-        ids(components.init_component::<C>(storages, reserve_entity));
+        ids(components.init_component::<C>(storages, reserve_component));
     }
 
     unsafe fn from_components<T, F>(ctx: &mut T, func: &mut F) -> Self
@@ -217,8 +217,8 @@ macro_rules! tuple_impl {
         //   `StorageType` into the callback.
         unsafe impl<$($name: Bundle),*> Bundle for ($($name,)*) {
             #[allow(unused_variables)]
-            fn component_ids(components: &mut Components, storages: &mut Storages, reserve_entity: &mut impl FnMut() -> Entity, ids: &mut impl FnMut(Entity)){
-                $(<$name as Bundle>::component_ids(components, storages, reserve_entity, ids);)*
+            fn component_ids(components: &mut Components, storages: &mut Storages, reserve_component: &mut impl FnMut() -> Entity, ids: &mut impl FnMut(Entity)){
+                $(<$name as Bundle>::component_ids(components, storages, reserve_component, ids);)*
             }
 
             #[allow(unused_variables, unused_mut)]
@@ -827,12 +827,12 @@ impl Bundles {
         &mut self,
         components: &mut Components,
         storages: &mut Storages,
-        mut reserve_entity: impl FnMut() -> Entity,
+        mut reserve_component: impl FnMut() -> Entity,
     ) -> BundleId {
         let bundle_infos = &mut self.bundle_infos;
         *self.bundle_ids.entry(TypeId::of::<T>()).or_insert_with(|| {
             let mut component_ids = Vec::new();
-            T::component_ids(components, storages, &mut reserve_entity, &mut |id| component_ids.push(id));
+            T::component_ids(components, storages, &mut reserve_component, &mut |id| component_ids.push(id));
             let id = BundleId(bundle_infos.len());
             let bundle_info =
                 // SAFETY: T::component_id ensures its: 
@@ -845,18 +845,14 @@ impl Bundles {
         })
     }
 
-    pub(crate) unsafe fn get_unchecked(&self, id: BundleId) -> &BundleInfo {
-        unsafe { self.bundle_infos.get_unchecked(id.0) }
-    }
-
     /// Initializes a new [`BundleInfo`] for a statically known type.
     pub(crate) fn init_info<'a, T: Bundle>(
         &'a mut self,
         components: &mut Components,
         storages: &mut Storages,
-        reserve_entity: impl FnMut() -> Entity,
+        reserve_component: impl FnMut() -> Entity,
     ) -> &'a BundleInfo {
-        let id = self.get_or_insert_id::<T>(components, storages, reserve_entity);
+        let id = self.get_or_insert_id::<T>(components, storages, reserve_component);
         // SAFETY: index either exists, or was initialized
         unsafe { self.bundle_infos.get_unchecked(id.0) }
     }

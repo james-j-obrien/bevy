@@ -1,5 +1,5 @@
 use crate::{DynamicEntity, DynamicScene, SceneFilter};
-use bevy_ecs::component::{Component, ComponentId};
+use bevy_ecs::component::Component;
 use bevy_ecs::system::Resource;
 use bevy_ecs::{
     prelude::Entity,
@@ -55,7 +55,7 @@ use std::collections::BTreeMap;
 /// let dynamic_scene = builder.build();
 /// ```
 pub struct DynamicSceneBuilder<'w> {
-    extracted_resources: BTreeMap<ComponentId, Box<dyn Reflect>>,
+    extracted_resources: BTreeMap<Entity, Box<dyn Reflect>>,
     extracted_scene: BTreeMap<Entity, DynamicEntity>,
     component_filter: SceneFilter,
     resource_filter: SceneFilter,

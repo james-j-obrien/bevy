@@ -34,15 +34,18 @@ where
         let (lower, upper) = iter.size_hint();
         let length = upper.unwrap_or(lower);
 
-        let bundle_id = world.bundles.get_or_insert_id::<I::Item>(
-            &mut world.components,
-            &mut world.storages,
-            || world.entities.reserve_entity(),
-        );
-        world.flush();
-        // SAFETY: just initialised the bundle
-        let bundle_info = unsafe { world.bundles.get_unchecked(bundle_id) };
+        let bundle_info =
+            world
+                .bundles
+                .init_info::<I::Item>(&mut world.components, &mut world.storages, || {
+                    world.entities.reserve_component()
+                });
+
+        world
+            .entities
+            .flush_all(&mut world.archetypes, &mut world.storages);
         world.entities.reserve(length as u32);
+
         let mut spawner = bundle_info.get_bundle_spawner(
             &mut world.entities,
             &mut world.archetypes,

@@ -320,37 +320,41 @@ impl Plugin for RenderPlugin {
             app.insert_resource(receiver);
             render_app.insert_resource(sender);
 
-            app.insert_sub_app(RenderApp, SubApp::new(render_app, move |main_world, render_app| {
-                #[cfg(feature = "trace")]
-                let _render_span = bevy_utils::tracing::info_span!("extract main app to render subapp").entered();
-                {
+            app.insert_sub_app(
+                RenderApp,
+                SubApp::new(render_app, move |main_world, render_app| {
                     #[cfg(feature = "trace")]
-                    let _stage_span =
-                        bevy_utils::tracing::info_span!("reserve_and_flush")
+                    let _render_span =
+                        bevy_utils::tracing::info_span!("extract main app to render subapp")
                             .entered();
+                    {
+                        #[cfg(feature = "trace")]
+                        let _stage_span =
+                            bevy_utils::tracing::info_span!("reserve_and_flush").entered();
 
-                    // reserve all existing main world entities for use in render_app
-                    // they can only be spawned using `get_or_spawn()`
-                    let total_count = main_world.entities().total_count();
+                        // reserve all existing main world entities for use in render_app
+                        // they can only be spawned using `get_or_spawn()`
+                        let total_count = main_world.entities().total_count();
 
-                    assert_eq!(
-                        render_app.world.entities().len(),
-                        0,
-                        "An entity was spawned after the entity list was cleared last frame and before the extract schedule began. This is not supported",
-                    );
+                        assert_eq!(
+                            render_app.world.entities().len(),
+                            0,
+                            "An entity was spawned after the entity list was cleared last frame and before the extract schedule began. This is not supported",
+                        );
 
-                    // This is safe given the clear_entities call in the past frame and the assert above
-                    unsafe {
-                        render_app
-                            .world
-                            .entities_mut()
-                            .flush_and_reserve_invalid_assuming_no_entities(total_count);
+                        // This is safe given the clear_entities call in the past frame and the assert above
+                        unsafe {
+                            render_app
+                                .world
+                                .entities_mut()
+                                .flush_and_reserve_invalid_assuming_no_entities(total_count);
+                        }
                     }
-                }
 
-                // run extract schedule
-                extract(main_world, render_app);
-            }));
+                    // run extract schedule
+                    extract(main_world, render_app);
+                }),
+            );
         }
 
         app.add_plugins((

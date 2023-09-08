@@ -573,8 +573,11 @@ impl<'w> EntityWorldMut<'w> {
         let bundle_info = self.world.bundles.init_info::<T>(
             &mut self.world.components,
             &mut self.world.storages,
-            || self.world.entities.reserve_entity(),
+            || self.world.entities.reserve_component(),
         );
+        self.world
+            .entities
+            .flush_all(&mut self.world.archetypes, &mut self.world.storages);
         let mut bundle_inserter = bundle_info.get_bundle_inserter(
             &mut self.world.entities,
             &mut self.world.archetypes,
@@ -692,7 +695,8 @@ impl<'w> EntityWorldMut<'w> {
         let bundle_info = self
             .world
             .bundles
-            .init_info::<T>(components, storages, || entities.reserve_entity());
+            .init_info::<T>(components, storages, || entities.reserve_component());
+        entities.flush_all(archetypes, storages);
         let old_location = self.location;
         // SAFETY: `archetype_id` exists because it is referenced in the old `EntityLocation` which is valid,
         // components exist in `bundle_info` because `Bundles::init_info` initializes a `BundleInfo` containing all components of the bundle type `T`
@@ -844,7 +848,8 @@ impl<'w> EntityWorldMut<'w> {
         let bundle_info = self
             .world
             .bundles
-            .init_info::<T>(components, storages, || entities.reserve_entity());
+            .init_info::<T>(components, storages, || entities.reserve_component());
+        entities.flush_all(archetypes, storages);
         let old_location = self.location;
 
         // SAFETY: `archetype_id` exists because it is referenced in the old `EntityLocation` which is valid,
@@ -903,6 +908,10 @@ impl<'w> EntityWorldMut<'w> {
     /// Despawns the current entity.
     pub fn despawn(self) {
         debug!("Despawning entity {:?}", self.entity);
+        debug_assert!(
+            self.id().index() >= Entities::RESERVED_COMPONENT_ENTITIES,
+            "Despawning a static component entity is unsupported"
+        );
         let world = self.world;
         world.flush();
         let location = world

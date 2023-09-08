@@ -3,12 +3,8 @@ use std::{borrow::Cow, cell::UnsafeCell, marker::PhantomData};
 use bevy_ptr::UnsafeCellDeref;
 
 use crate::{
-    archetype::ArchetypeComponentId,
-    component::{ComponentId, Tick},
-    entity::Entity,
-    prelude::World,
-    query::Access,
-    world::unsafe_world_cell::UnsafeWorldCell,
+    archetype::ArchetypeComponentId, component::Tick, entity::Entity, prelude::World,
+    query::Access, world::unsafe_world_cell::UnsafeWorldCell,
 };
 
 use super::{ReadOnlySystem, System};

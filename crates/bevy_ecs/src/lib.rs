@@ -64,11 +64,12 @@ type TypeIdMap<V> = rustc_hash::FxHashMap<TypeId, V>;
 #[cfg(test)]
 mod tests {
     use crate as bevy_ecs;
+    use crate::entity::Entities;
     use crate::prelude::Or;
     use crate::{
         bundle::Bundle,
         change_detection::Ref,
-        component::{Component, ComponentId},
+        component::Component,
         entity::Entity,
         query::{Added, Changed, FilteredAccess, ReadOnlyWorldQuery, With, Without},
         system::Resource,
@@ -155,7 +156,7 @@ mod tests {
         <FooBundle as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
-            &mut || world.entities.reserve_entity(),
+            &mut || world.entities.reserve_component(),
             &mut |id| {
                 ids.push(id);
             },
@@ -210,7 +211,7 @@ mod tests {
         <NestedBundle as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
-            &mut || world.entities.reserve_entity(),
+            &mut || world.entities.reserve_component(),
             &mut |id| {
                 ids.push(id);
             },
@@ -267,7 +268,7 @@ mod tests {
         <BundleWithIgnored as Bundle>::component_ids(
             &mut world.components,
             &mut world.storages,
-            &mut || world.entities.reserve_entity(),
+            &mut || world.entities.reserve_component(),
             &mut |id| {
                 ids.push(id);
             },
@@ -1021,6 +1022,7 @@ mod tests {
         );
 
         // removing an unchanged entity should not change changed state
+        dbg!(e2);
         assert!(world.despawn(e2));
         assert_eq!(
             get_filtered::<Changed<SparseStored>>(&mut world),
@@ -1557,6 +1559,7 @@ mod tests {
         let e3 = world_a.entities().reserve_entity();
         world_a.flush();
 
+        let component_entities = Entities::RESERVED_COMPONENT_ENTITIES;
         let world_a_max_entities = world_a.entities().len();
         world_b.entities.reserve_entities(world_a_max_entities);
         world_b.entities.flush_as_invalid();
@@ -1564,7 +1567,7 @@ mod tests {
         let e4 = world_b.spawn(A(4)).id();
         assert_eq!(
             e4,
-            Entity::new(3, 0),
+            Entity::new(component_entities + 3, 0),
             "new entity is created immediately after world_a's max entity"
         );
         assert!(world_b.get::<A>(e1).is_none());
@@ -1595,7 +1598,7 @@ mod tests {
             "spawning into existing `world_b` entities works"
         );
 
-        let e4_mismatched_generation = Entity::new(3, 1);
+        let e4_mismatched_generation = Entity::new(e4.index(), 1);
         assert!(
             world_b.get_or_spawn(e4_mismatched_generation).is_none(),
             "attempting to spawn on top of an entity with a mismatched entity generation fails"
@@ -1611,7 +1614,7 @@ mod tests {
             "failed mismatched spawn doesn't change existing entity"
         );
 
-        let high_non_existent_entity = Entity::new(6, 0);
+        let high_non_existent_entity = Entity::new(e4.index() + 3, 0);
         world_b
             .get_or_spawn(high_non_existent_entity)
             .unwrap()
@@ -1622,7 +1625,7 @@ mod tests {
             "inserting into newly allocated high / non-continuous entity id works"
         );
 
-        let high_non_existent_but_reserved_entity = Entity::new(5, 0);
+        let high_non_existent_but_reserved_entity = Entity::new(e4.index() + 2, 0);
         assert!(
             world_b.get_entity(high_non_existent_but_reserved_entity).is_none(),
             "entities between high-newly allocated entity and continuous block of existing entities don't exist"
@@ -1638,10 +1641,10 @@ mod tests {
         assert_eq!(
             reserved_entities,
             vec![
-                Entity::new(5, 0),
-                Entity::new(4, 0),
-                Entity::new(7, 0),
-                Entity::new(8, 0),
+                Entity::new(e4.index() + 2, 0),
+                Entity::new(e4.index() + 1, 0),
+                Entity::new(e4.index() + 4, 0),
+                Entity::new(e4.index() + 5, 0),
             ],
             "space between original entities and high entities is used for new entity ids"
         );

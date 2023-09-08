@@ -56,16 +56,6 @@ macro_rules! impl_sparse_array {
                 let index = index.sparse_set_index();
                 self.values.get(index).map(|v| v.as_ref()).unwrap_or(None)
             }
-
-            /// Returns a reference to the value at `index`.
-            ///
-            /// Returns `None` if `index` does not have a value or if `index` is out of bounds.
-            #[inline]
-            pub unsafe fn get_unchecked(&self, index: I) -> &V {
-                let index = index.sparse_set_index();
-                // TODO: as_ref check
-                unsafe { self.values.get_unchecked(index).as_ref().unwrap_unchecked() }
-            }
         }
     };
 }
@@ -96,6 +86,16 @@ impl<I: SparseSetIndex, V> SparseArray<I, V> {
             .get_mut(index)
             .map(|v| v.as_mut())
             .unwrap_or(None)
+    }
+
+    /// Returns a reference to the value at `index`.
+    ///
+    /// Returns `None` if `index` does not have a value or if `index` is out of bounds.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: I) -> &V {
+        let index = index.sparse_set_index();
+        // TODO: as_ref check
+        unsafe { self.values.get_unchecked(index).as_ref().unwrap_unchecked() }
     }
 
     /// Removes and returns the value stored at `index`.
@@ -407,11 +407,6 @@ macro_rules! impl_sparse_set {
                 })
             }
 
-            pub unsafe fn get_unchecked(&self, index: I) -> &V {
-                let dense_index = self.sparse.get_unchecked(index);
-                unsafe { self.dense.get_unchecked(*dense_index) }
-            }
-
             /// Returns an iterator visiting all keys (indices) in arbitrary order.
             pub fn indices(&self) -> impl Iterator<Item = I> + '_ {
                 self.indices.iter().cloned()
@@ -507,6 +502,12 @@ impl<I: SparseSetIndex, V> SparseSet<I, V> {
             // SAFETY: dense index was just populated above
             unsafe { self.dense.get_unchecked_mut(dense_index) }
         }
+    }
+
+    /// TODO: Docs
+    pub unsafe fn get_unchecked(&self, index: I) -> &V {
+        let dense_index = self.sparse.get_unchecked(index);
+        unsafe { self.dense.get_unchecked(*dense_index) }
     }
 
     /// Returns `true` if the sparse set contains no elements.
@@ -651,7 +652,7 @@ mod tests {
     use super::SparseSets;
     use crate::{
         self as bevy_ecs,
-        component::{Component, ComponentDescriptor, ComponentId, ComponentInfo},
+        component::{Component, ComponentDescriptor, ComponentInfo},
         entity::Entity,
         storage::SparseSet,
     };

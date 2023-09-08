@@ -4,7 +4,7 @@ use crate::{
     self as bevy_ecs,
     change_detection::MAX_CHANGE_AGE,
     entity::Entity,
-    storage::{SparseSet, SparseSetIndex, Storages},
+    storage::{SparseSet, Storages},
     system::{Local, Resource, SystemParam},
     world::{FromWorld, World},
     TypeIdMap,
@@ -266,55 +266,6 @@ impl ComponentInfo {
     }
 }
 
-/// A value which uniquely identifies the type of a [`Component`] within a
-/// [`World`](crate::world::World).
-///
-/// Each time a new `Component` type is registered within a `World` using
-/// [`World::init_component`](crate::world::World::init_component) or
-/// [`World::init_component_with_descriptor`](crate::world::World::init_component_with_descriptor),
-/// a corresponding `ComponentId` is created to track it.
-///
-/// While the distinction between `ComponentId` and [`TypeId`] may seem superficial, breaking them
-/// into two separate but related concepts allows components to exist outside of Rust's type system.
-/// Each Rust type registered as a `Component` will have a corresponding `ComponentId`, but additional
-/// `ComponentId`s may exist in a `World` to track components which cannot be
-/// represented as Rust types for scripting or other advanced use-cases.
-///
-/// A `ComponentId` is tightly coupled to its parent `World`. Attempting to use a `ComponentId` from
-/// one `World` to access the metadata of a `Component` in a different `World` is undefined behavior
-/// and must not be attempted.
-#[derive(Debug, Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
-pub struct ComponentId(usize);
-
-impl ComponentId {
-    /// Creates a new [`ComponentId`].
-    ///
-    /// The `index` is a unique value associated with each type of component in a given world.
-    /// Usually, this value is taken from a counter incremented for each type of component registered with the world.
-    #[inline]
-    pub const fn new(index: usize) -> ComponentId {
-        ComponentId(index)
-    }
-
-    /// Returns the index of the current component.
-    #[inline]
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
-impl SparseSetIndex for ComponentId {
-    #[inline]
-    fn sparse_set_index(&self) -> usize {
-        self.index()
-    }
-
-    #[inline]
-    fn get_sparse_set_index(value: usize) -> Self {
-        Self(value)
-    }
-}
-
 /// A value describing a component or resource, which may or may not correspond to a Rust type.
 pub struct ComponentDescriptor {
     name: Cow<'static, str>,
@@ -447,7 +398,7 @@ impl Components {
     pub fn init_component<T: Component>(
         &mut self,
         storages: &mut Storages,
-        reserve_entity: impl FnOnce() -> Entity,
+        reserve_component: impl FnOnce() -> Entity,
     ) -> Entity {
         let type_id = TypeId::of::<T>();
 
@@ -457,7 +408,7 @@ impl Components {
             ..
         } = self;
         let entity = indices.entry(type_id).or_insert_with(|| {
-            let entity = reserve_entity();
+            let entity = reserve_component();
             Components::init_component_inner(
                 entity,
                 components,
@@ -639,7 +590,6 @@ impl Components {
         let index = self.resource_indices.entry(type_id).or_insert_with(|| {
             let entity = entity();
             let descriptor = func();
-            let index = components.len();
             components.insert(entity, ComponentInfo::new(entity, descriptor));
             entity
         });
@@ -806,15 +756,15 @@ impl ComponentTicks {
     }
 }
 
-/// A [`SystemParam`] that provides access to the [`ComponentId`] for a specific type.
+/// A [`SystemParam`] that provides access to the [`Entity`] for a specific type.
 ///
 /// # Example
 /// ```rust
-/// # use bevy_ecs::{system::Local, component::{Component, ComponentId, ComponentIdFor}};
+/// # use bevy_ecs::{entity::Entity, system::Local, component::{Component, ComponentIdFor}};
 /// #[derive(Component)]
 /// struct Player;
 /// fn my_system(component_id: ComponentIdFor<Player>) {
-///     let component_id: ComponentId = component_id.get();
+///     let component_id: Entity = component_id.get();
 ///     // ...
 /// }
 /// ```

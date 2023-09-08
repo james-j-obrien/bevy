@@ -950,6 +950,6 @@ mod tests {
         }
 
         assert_eq!(table.entity_capacity(), 256);
-        assert_eq!(table.entity_count(), 201);
+        assert_eq!(table.entity_count(), 200);
     }
 }

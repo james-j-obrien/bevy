@@ -77,7 +77,7 @@ impl Default for World {
     fn default() -> Self {
         Self {
             id: WorldId::new().expect("More `bevy` `World`s have been created than is supported"),
-            entities: Entities::new(),
+            entities: Entities::default(),
             components: Default::default(),
             archetypes: Archetypes::new(),
             storages: Default::default(),
@@ -179,8 +179,10 @@ impl World {
     /// Initializes a new [`Component`] type and returns the [`Entity`] created for it.
     pub fn init_component<T: Component>(&mut self) -> Entity {
         self.flush();
-        self.components
-            .init_component::<T>(&mut self.storages, || self.entities.reserve_entity())
+        let entity = self
+            .components
+            .init_component::<T>(&mut self.storages, || self.entities.reserve_component());
+        entity
     }
 
     /// Initializes a new [`Component`] type and returns the [`Entity`] created for it.
@@ -738,7 +740,7 @@ impl World {
             let bundle_info =
                 self.bundles
                     .init_info::<B>(&mut self.components, &mut self.storages, || {
-                        self.entities.reserve_entity()
+                        self.entities.reserve_component()
                     });
             let mut spawner = bundle_info.get_bundle_spawner(
                 &mut self.entities,
@@ -1046,7 +1048,7 @@ impl World {
         self.flush();
         let entity = self
             .components
-            .init_resource::<R>(|| self.entities.reserve_entity());
+            .init_resource::<R>(|| self.entities.reserve_component());
         if self
             .storages
             .resources
@@ -1074,7 +1076,7 @@ impl World {
         self.flush();
         let component_id = self
             .components
-            .init_resource::<R>(|| self.entities.reserve_entity());
+            .init_resource::<R>(|| self.entities.reserve_component());
         OwningPtr::make(value, |ptr| {
             // SAFETY: component_id was just initialized and corresponds to resource of type R.
             unsafe {
@@ -1099,7 +1101,7 @@ impl World {
         self.flush();
         let component_id = self
             .components
-            .init_non_send::<R>(|| self.entities.reserve_entity());
+            .init_non_send::<R>(|| self.entities.reserve_component());
         if self
             .storages
             .non_send_resources
@@ -1131,7 +1133,7 @@ impl World {
         self.flush();
         let component_id = self
             .components
-            .init_non_send::<R>(|| self.entities.reserve_entity());
+            .init_non_send::<R>(|| self.entities.reserve_component());
         OwningPtr::make(value, |ptr| {
             // SAFETY: component_id was just initialized and corresponds to resource of type R.
             unsafe {
@@ -1301,7 +1303,7 @@ impl World {
 
         let component_id = self
             .components
-            .init_resource::<R>(|| self.entities.reserve_entity());
+            .init_resource::<R>(|| self.entities.reserve_component());
         let data = self.initialize_resource_internal(component_id);
         if !data.is_present() {
             OwningPtr::make(func(), |ptr| {
@@ -1453,8 +1455,12 @@ impl World {
         let bundle_info =
             self.bundles
                 .init_info::<B>(&mut self.components, &mut self.storages, || {
-                    self.entities.reserve_entity()
+                    self.entities.reserve_component()
                 });
+
+        self.entities
+            .flush_all(&mut self.archetypes, &mut self.storages);
+
         enum SpawnOrInsert<'a, 'b> {
             Spawn(BundleSpawner<'a, 'b>),
             Insert(BundleInserter<'a, 'b>, ArchetypeId),
@@ -1703,7 +1709,7 @@ impl World {
         self.flush();
         let component_id = self
             .components
-            .init_resource::<R>(|| self.entities.reserve_entity());
+            .init_resource::<R>(|| self.entities.reserve_component());
         self.initialize_resource_internal(component_id);
         component_id
     }
@@ -1712,7 +1718,7 @@ impl World {
         self.flush();
         let component_id = self
             .components
-            .init_non_send::<R>(|| self.entities.reserve_entity());
+            .init_non_send::<R>(|| self.entities.reserve_component());
         self.initialize_non_send_internal(component_id);
         component_id
     }
@@ -1721,17 +1727,8 @@ impl World {
     /// This should be called before doing operations that might operate on queued entities,
     /// such as inserting a [Component].
     pub(crate) fn flush(&mut self) {
-        let empty_archetype = self.archetypes.empty_mut();
-        let table = &mut self.storages.tables[empty_archetype.table_id()];
-        // PERF: consider pre-allocating space for flushed entities
-        // SAFETY: entity is set to a valid location
-        unsafe {
-            self.entities.flush(|entity, location| {
-                // SAFETY: no components are allocated by archetype.allocate() because the archetype
-                // is empty
-                *location = empty_archetype.allocate(entity, table.allocate(entity));
-            });
-        }
+        self.entities
+            .flush_all(&mut self.archetypes, &mut self.storages);
     }
 
     /// Increments the world's current change tick and returns the old value.
@@ -2138,6 +2135,7 @@ mod tests {
     use crate::{
         change_detection::DetectChangesMut,
         component::{ComponentDescriptor, ComponentInfo, StorageType},
+        prelude::EntityMut,
         ptr::OwningPtr,
         system::Resource,
     };
@@ -2466,10 +2464,10 @@ mod tests {
 
         // Adding one entity and validating iteration
         let ent0 = world.spawn((Foo, Bar, Baz)).id();
-
+        dbg!(ent0);
         iterate_and_count_entities(&world, &mut entity_counters);
         assert_eq!(entity_counters[&ent0], 1);
-        assert_eq!(entity_counters.len(), 1);
+        assert_eq!(entity_counters.len(), 4);
 
         // Spawning three more entities and then validating iteration
         let ent1 = world.spawn((Foo, Bar)).id();
@@ -2482,7 +2480,7 @@ mod tests {
         assert_eq!(entity_counters[&ent1], 1);
         assert_eq!(entity_counters[&ent2], 1);
         assert_eq!(entity_counters[&ent3], 1);
-        assert_eq!(entity_counters.len(), 4);
+        assert_eq!(entity_counters.len(), 7);
 
         // Despawning first entity and then validating the iteration
         assert!(world.despawn(ent0));
@@ -2492,7 +2490,7 @@ mod tests {
         assert_eq!(entity_counters[&ent1], 1);
         assert_eq!(entity_counters[&ent2], 1);
         assert_eq!(entity_counters[&ent3], 1);
-        assert_eq!(entity_counters.len(), 3);
+        assert_eq!(entity_counters.len(), 6);
 
         // Spawning three more entities, despawning three and then validating the iteration
         let ent4 = world.spawn(Foo).id();
@@ -2508,7 +2506,7 @@ mod tests {
         assert_eq!(entity_counters[&ent1], 1);
         assert_eq!(entity_counters[&ent5], 1);
         assert_eq!(entity_counters[&ent6], 1);
-        assert_eq!(entity_counters.len(), 3);
+        assert_eq!(entity_counters.len(), 6);
 
         // Despawning remaining entities and then validating the iteration
         assert!(world.despawn(ent1));
@@ -2517,7 +2515,7 @@ mod tests {
 
         iterate_and_count_entities(&world, &mut entity_counters);
 
-        assert_eq!(entity_counters.len(), 0);
+        assert_eq!(entity_counters.len(), 3);
     }
 
     #[test]
@@ -2556,7 +2554,11 @@ mod tests {
         assert_eq!(world.entity(b2).get(), Some(&B(4)));
 
         let mut entities = world.iter_entities_mut().collect::<Vec<_>>();
-        entities.sort_by_key(|e| e.get::<A>().map(|a| a.0).or(e.get::<B>().map(|b| b.0)));
+        fn key(e: &EntityMut) -> Option<i32> {
+            e.get::<A>().map(|a| a.0).or(e.get::<B>().map(|b| b.0))
+        }
+        entities = entities.into_iter().filter(|e| key(e).is_some()).collect();
+        entities.sort_by_key(key);
         let (a, b) = entities.split_at_mut(2);
         std::mem::swap(
             &mut a[1].get_mut::<A>().unwrap().0,
