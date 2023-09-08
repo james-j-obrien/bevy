@@ -47,11 +47,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> std::fmt::Debug for QueryState<Q, F> 
     }
 }
 
-impl<Q: WorldQuery, F: ReadOnlyWorldQuery> FromWorld for QueryState<Q, F>
-where
-    <Q as WorldQuery>::Config: Default,
-    <F as WorldQuery>::Config: Default,
-{
+impl<Q: WorldQuery, F: ReadOnlyWorldQuery> FromWorld for QueryState<Q, F> {
     fn from_world(world: &mut World) -> Self {
         world.query_filtered()
     }
@@ -97,11 +93,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
 
 impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     /// Creates a new [`QueryState`] from a given [`World`] and inherits the result of `world.id()`.
-    pub fn new(world: &mut World) -> Self
-    where
-        <Q as WorldQuery>::Config: Default,
-        <F as WorldQuery>::Config: Default,
-    {
+    pub fn new(world: &mut World) -> Self {
         let fetch_config = Default::default();
         let filter_config = Default::default();
         QueryState::new_with_config(world, fetch_config, filter_config)

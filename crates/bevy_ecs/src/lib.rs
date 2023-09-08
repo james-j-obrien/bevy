@@ -909,10 +909,7 @@ mod tests {
             }
         }
 
-        fn get_filtered<F: ReadOnlyWorldQuery>(world: &mut World) -> Vec<Entity>
-        where
-            F::Config: Default,
-        {
+        fn get_filtered<F: ReadOnlyWorldQuery>(world: &mut World) -> Vec<Entity> {
             world
                 .query_filtered::<Entity, F>()
                 .iter(world)
@@ -995,10 +992,7 @@ mod tests {
             }
         }
 
-        fn get_filtered<F: ReadOnlyWorldQuery>(world: &mut World) -> Vec<Entity>
-        where
-            F::Config: Default,
-        {
+        fn get_filtered<F: ReadOnlyWorldQuery>(world: &mut World) -> Vec<Entity> {
             world
                 .query_filtered::<Entity, F>()
                 .iter(world)

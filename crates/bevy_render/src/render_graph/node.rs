@@ -368,10 +368,7 @@ pub struct ViewNodeRunner<N: ViewNode> {
     node: N,
 }
 
-impl<N: ViewNode> ViewNodeRunner<N>
-where
-    <N::ViewQuery as WorldQuery>::Config: Default,
-{
+impl<N: ViewNode> ViewNodeRunner<N> {
     pub fn new(node: N, world: &mut World) -> Self {
         Self {
             view_query: world.query_filtered(),
@@ -380,10 +377,7 @@ where
     }
 }
 
-impl<N: ViewNode + FromWorld> FromWorld for ViewNodeRunner<N>
-where
-    <N::ViewQuery as WorldQuery>::Config: Default,
-{
+impl<N: ViewNode + FromWorld> FromWorld for ViewNodeRunner<N> {
     fn from_world(world: &mut World) -> Self {
         Self::new(N::from_world(world), world)
     }

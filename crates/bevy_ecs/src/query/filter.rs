@@ -385,7 +385,7 @@ macro_rules! impl_query_filter_tuple {
     };
 }
 
-all_tuples!(impl_query_filter_tuple, 0, 15, F, S);
+all_tuples!(impl_query_filter_tuple, 0, 12, F, S);
 
 macro_rules! impl_tick_filter {
     (

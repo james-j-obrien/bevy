@@ -1,6 +1,7 @@
 //! Contains APIs for retrieving component data from the world.
 
 mod access;
+mod builder;
 mod fetch;
 mod filter;
 mod iter;
@@ -8,6 +9,7 @@ mod par_iter;
 mod state;
 
 pub use access::*;
+pub use builder::*;
 pub use fetch::*;
 pub use filter::*;
 pub use iter::*;
@@ -114,8 +116,6 @@ mod tests {
             Q: ReadOnlyWorldQuery,
             F: ReadOnlyWorldQuery,
             F::ReadOnly: ArchetypeFilter,
-            Q::Config: Default,
-            F::Config: Default,
         {
             let mut query = world.query_filtered::<Q, F>();
             let query_type = type_name::<QueryCombinationIter<Q, F, K>>();
@@ -131,8 +131,6 @@ mod tests {
             Q: ReadOnlyWorldQuery,
             F: ReadOnlyWorldQuery,
             F::ReadOnly: ArchetypeFilter,
-            Q::Config: Default,
-            F::Config: Default,
         {
             let mut query = world.query_filtered::<Q, F>();
             let query_type = type_name::<QueryState<Q, F>>();

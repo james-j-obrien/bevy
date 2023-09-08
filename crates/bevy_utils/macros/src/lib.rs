@@ -4,7 +4,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     token::Comma,
-    Ident, LitInt, Result,
+    Ident, Index, LitInt, Member, Result,
 };
 struct AllTuples {
     macro_ident: Ident,
@@ -104,7 +104,7 @@ impl Parse for AllTuples {
 /// ````
 #[proc_macro]
 pub fn all_tuples(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as AllTuples);
+    let input: AllTuples = parse_macro_input!(input as AllTuples);
     let len = 1 + input.end - input.start;
     let mut ident_tuples = Vec::with_capacity(len);
     for i in 0..=len {
@@ -135,4 +135,50 @@ pub fn all_tuples(input: TokenStream) -> TokenStream {
             #invocations
         )*
     })
+}
+
+struct AllIndices {
+    macro_ident: Ident,
+    idents: Vec<Ident>,
+}
+
+impl Parse for AllIndices {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let macro_ident = input.parse::<Ident>()?;
+        input.parse::<Comma>()?;
+        let mut idents = vec![input.parse::<Ident>()?];
+        while input.parse::<Comma>().is_ok() {
+            idents.push(input.parse::<Ident>().unwrap());
+        }
+
+        Ok(AllIndices {
+            macro_ident,
+            idents,
+        })
+    }
+}
+
+#[proc_macro]
+pub fn all_indices(input: TokenStream) -> TokenStream {
+    let input: AllIndices = parse_macro_input!(input as AllIndices);
+    let macro_ident = &input.macro_ident;
+    let idents = &input.idents;
+    let invocations = input.idents.iter().enumerate().map(|(i, ident)| {
+        let i = i as u32;
+        let field = Member::Unnamed(Index {
+            index: i,
+            span: ident.span(),
+        });
+        quote! {
+            #macro_ident!(#ident, #i, #field, #(
+                #idents
+            ),*);
+        }
+    });
+    let stream = TokenStream::from(quote! {
+        #(
+            #invocations
+        )*
+    });
+    stream
 }
