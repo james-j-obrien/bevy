@@ -550,6 +550,7 @@ unsafe impl WorldQuery for EntityRef<'_> {
     type Item<'w> = EntityRef<'w>;
     type ReadOnly = Self;
     type State = ();
+    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -611,7 +612,7 @@ unsafe impl WorldQuery for EntityRef<'_> {
         }
     }
 
-    fn init_state(_world: &mut World) {}
+    fn init_state(_config: (), _world: &mut World) {}
 
     fn matches_component_set(
         _state: &Self::State,
@@ -630,6 +631,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
     type Item<'w> = EntityMut<'w>;
     type ReadOnly = EntityRef<'a>;
     type State = ();
+    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -691,7 +693,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
         }
     }
 
-    fn init_state(_world: &mut World) {}
+    fn init_state(_config: (), _world: &mut World) {}
 
     fn matches_component_set(
         _state: &Self::State,
