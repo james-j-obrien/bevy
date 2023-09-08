@@ -1,85 +1,164 @@
-use bevy_utils::{all_indices, all_tuples};
-
-use crate::prelude::World;
+use crate::{
+    component::ComponentId,
+    prelude::{Component, World},
+};
+use bevy_derive::{Deref, DerefMut};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 use super::*;
 
-pub struct QueryBuilder<Q: WorldQuery, F: ReadOnlyWorldQuery = ()> {
-    fetch_config: <Q as WorldQuery>::Config,
-    filter_config: <F as WorldQuery>::Config,
+pub struct ComponentTerm {
+    id: Option<ComponentId>,
 }
 
-impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryBuilder<Q, F> {
-    pub fn new() -> Self {
-        Self {
-            fetch_config: <<Q as WorldQuery>::Config as Default>::default(),
-            filter_config: <<F as WorldQuery>::Config as Default>::default(),
+impl ComponentTerm {
+    pub fn new(id: ComponentId) -> Self {
+        Self { id: Some(id) }
+    }
+
+    pub fn empty() -> Self {
+        Self { id: None }
+    }
+}
+
+#[derive(Default)]
+pub enum Term {
+    #[default]
+    Entity,
+    Group(Vec<Term>),
+    Component(ComponentTerm),
+}
+
+impl Term {
+    pub fn new(component: ComponentId) -> Self {
+        Self::Component(ComponentTerm::new(component))
+    }
+
+    pub fn component() -> Self {
+        Self::Component(ComponentTerm::empty())
+    }
+
+    pub fn group(terms: Vec<Term>) -> Self {
+        Self::Group(terms)
+    }
+
+    pub fn id(&self) -> ComponentId {
+        match &self {
+            Term::Component(term) => term.id.unwrap(),
+            _ => unreachable!(),
         }
     }
 
-    pub fn build(&mut self, world: &mut World) -> QueryState<Q, F> {
-        let fetch_config = std::mem::replace(
-            &mut self.fetch_config,
-            <<Q as WorldQuery>::Config as Default>::default(),
-        );
-        let filter_config = std::mem::replace(
-            &mut self.filter_config,
-            <<F as WorldQuery>::Config as Default>::default(),
-        );
-        QueryState::new_with_config(world, fetch_config, filter_config)
+    pub fn iter(&self) -> impl Iterator<Item = &Term> {
+        match &self {
+            Term::Group(terms) => terms.iter(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Index<usize> for Term {
+    type Output = Term;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match &self {
+            Term::Group(terms) => &terms[index],
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl IndexMut<usize> for Term {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match self {
+            Term::Group(terms) => &mut terms[index],
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'w> IntoIterator for Term {
+    type Item = Term;
+    type IntoIter = <Vec<Term> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Term::Group(terms) => terms.into_iter(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub struct QueryBuilder<'w, Q: WorldQuery> {
+    world: &'w mut World,
+    term: Term,
+    _marker: PhantomData<Q>,
+}
+
+#[derive(Deref, DerefMut)]
+pub struct TermBuilder<'w, Q: WorldQuery> {
+    term: Term,
+    path: Vec<usize>,
+    #[deref]
+    query: &'w mut QueryBuilder<'w, Q>,
+}
+
+impl<'w, Q: WorldQuery> Drop for TermBuilder<'w, Q> {
+    fn drop(&mut self) {
+        *self.query.term_path(&self.path) = std::mem::take(&mut self.term);
+    }
+}
+
+impl<'w, Q: WorldQuery> TermBuilder<'w, Q> {
+    pub fn new(term: Term, path: Vec<usize>, query: &'w mut QueryBuilder<'w, Q>) -> Self {
+        Self { term, path, query }
     }
 
-    pub fn config<const N: u32, T>(&mut self, value: T) -> &mut Self
-    where
-        Self: Config<N, T>,
-    {
-        <Self as Config<N, T>>::config(self, value)
-    }
-
-    pub fn with_config(&mut self, value: Q::Config) -> &mut Self {
-        self.fetch_config = value;
+    pub fn id(&mut self, id: ComponentId) -> &mut Self {
+        match &mut self.term {
+            Term::Component(term) => term.id = Some(id),
+            _ => panic!("Cannot set id on non-component term."),
+        }
         self
     }
+
+    pub fn set<T: Component>(&mut self) -> &mut Self {
+        let id = self.query.world.init_component::<T>();
+        self.id(id)
+    }
 }
 
-// impl<A: WorldQuery, B: WorldQuery> Config<0, A::Config> for QueryBuilder<(A, B)> {
-//     fn config(&mut self, value: A::Config) -> &mut Self {
-//         self.fetch_config.0 = value;
-//         self
-//     }
-// }
-
-// impl<A: WorldQuery, B: WorldQuery> Config<1, B::Config> for QueryBuilder<(A, B)> {
-//     fn config(&mut self, value: B::Config) -> &mut Self {
-//         self.fetch_config.1 = value;
-//         self
-//     }
-// }
-
-pub trait Config<const N: u32, T> {
-    fn config(&mut self, value: T) -> &mut Self;
-}
-
-macro_rules! impl_config {
-    ($config: ident, $index: literal, $field: tt, $($name: ident),*) => {
-        #[allow(non_snake_case)]
-        #[allow(clippy::unused_unit)]
-        impl<$($name: WorldQuery,)*> Config<$index, $config::Config> for QueryBuilder<($($name,)*)> {
-            fn config(&mut self, value: $config::Config) -> &mut Self {
-                self.fetch_config.$field = value;
-                self
-            }
+impl<'w, Q: WorldQuery> QueryBuilder<'w, Q> {
+    pub fn new(world: &'w mut World) -> Self {
+        let term = Q::init_state(world);
+        Self {
+            world,
+            term,
+            _marker: PhantomData::default(),
         }
-    };
-}
+    }
 
-macro_rules! impl_config_tuple {
-    ($($name: ident),*) => {
-        all_indices!(impl_config, $($name),*);
-    };
-}
+    pub fn term(&'w mut self, index: usize) -> TermBuilder<'w, Q> {
+        let term = std::mem::replace(&mut self.term[index], Term::Entity);
+        TermBuilder::new(term, vec![index], self)
+    }
 
-all_tuples!(impl_config_tuple, 2, 12, F);
+    pub fn term_path(&mut self, path: &Vec<usize>) -> &mut Term {
+        let mut term = &mut self.term;
+        for &index in path {
+            term = &mut term[index];
+        }
+        term
+    }
+
+    pub fn build(&mut self) -> QueryState<Q> {
+        let term = std::mem::replace(&mut self.term, Term::Entity);
+        QueryState::from(self.world, term)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -94,16 +173,41 @@ mod tests {
     struct B(usize);
 
     #[test]
-    fn test_config() {
+    fn test_static() {
+        let mut world = World::new();
+        let entity = world.spawn((A(0), B(1))).id();
+
+        let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new(&mut world)
+            .term(1)
+            .set::<A>()
+            .term(2)
+            .set::<B>()
+            .build();
+
+        let (e, a, b) = query.single(&world);
+
+        assert_eq!(e, entity);
+
+        let a = unsafe { a.deref::<A>() };
+        let b = unsafe { b.deref::<B>() };
+
+        assert_eq!(a.0, 0);
+        assert_eq!(b.0, 1);
+    }
+
+    #[test]
+    fn test_dynamic() {
         let mut world = World::new();
         let entity = world.spawn((A(0), B(1))).id();
         let component_id_a = world.component_id::<A>().unwrap();
         let component_id_b = world.component_id::<B>().unwrap();
 
-        let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new()
-            .config::<1, _>(component_id_a)
-            .config::<2, _>(component_id_b)
-            .build(&mut world);
+        let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new(&mut world)
+            .term(1)
+            .id(component_id_a)
+            .term(2)
+            .id(component_id_b)
+            .build();
 
         let (e, a, b) = query.single(&world);
 

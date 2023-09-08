@@ -13,9 +13,9 @@ use crate::{
 #[cfg(feature = "trace")]
 use bevy_utils::tracing::Instrument;
 use fixedbitset::FixedBitSet;
-use std::{borrow::Borrow, fmt, mem::MaybeUninit};
+use std::{borrow::Borrow, fmt, marker::PhantomData, mem::MaybeUninit};
 
-use super::{NopWorldQuery, QueryManyIter, ROQueryItem, ReadOnlyWorldQuery};
+use super::{NopWorldQuery, QueryManyIter, ROQueryItem, ReadOnlyWorldQuery, Term};
 
 /// Provides scoped access to a [`World`] state according to a given [`WorldQuery`] and query filter.
 #[repr(C)]
@@ -33,8 +33,10 @@ pub struct QueryState<Q: WorldQuery, F: ReadOnlyWorldQuery = ()> {
     pub(crate) matched_table_ids: Vec<TableId>,
     // NOTE: we maintain both a ArchetypeId bitset and a vec because iterating the vec is faster
     pub(crate) matched_archetype_ids: Vec<ArchetypeId>,
-    pub(crate) fetch_state: Q::State,
-    pub(crate) filter_state: F::State,
+    pub(crate) fetch_state: Term,
+    pub(crate) filter_state: Term,
+    _fetch_marker: PhantomData<fn() -> Q>,
+    _filter_maker: PhantomData<fn() -> F>,
 }
 
 impl<Q: WorldQuery, F: ReadOnlyWorldQuery> std::fmt::Debug for QueryState<Q, F> {
@@ -81,10 +83,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     ///
     /// `NewQ` must have a subset of the access that `Q` does and match the exact same archetypes/tables
     /// `NewF` must have a subset of the access that `F` does and match the exact same archetypes/tables
-    pub(crate) unsafe fn as_transmuted_state<
-        NewQ: WorldQuery<State = Q::State>,
-        NewF: ReadOnlyWorldQuery<State = F::State>,
-    >(
+    pub(crate) unsafe fn as_transmuted_state<NewQ: WorldQuery, NewF: ReadOnlyWorldQuery>(
         &self,
     ) -> &QueryState<NewQ, NewF> {
         &*(self as *const QueryState<Q, F> as *const QueryState<NewQ, NewF>)
@@ -94,28 +93,22 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
 impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     /// Creates a new [`QueryState`] from a given [`World`] and inherits the result of `world.id()`.
     pub fn new(world: &mut World) -> Self {
-        let fetch_config = Default::default();
-        let filter_config = Default::default();
-        QueryState::new_with_config(world, fetch_config, filter_config)
+        let term = Q::init_state(world);
+        Self::from(world, term)
     }
 
-    /// Creates a new [`QueryState`] from a given [`World`], config, and inherits the result of `world.id()`.
-    pub fn new_with_config(
-        world: &mut World,
-        fetch_config: <Q as WorldQuery>::Config,
-        filter_config: <F as WorldQuery>::Config,
-    ) -> Self {
-        let fetch_state = Q::init_state(fetch_config, world);
-        let filter_state = F::init_state(filter_config, world);
+    pub fn from(world: &mut World, term: Term) -> Self {
+        let fetch_term = term;
+        let filter_term = F::init_state(world);
 
         let mut component_access = FilteredAccess::default();
-        Q::update_component_access(&fetch_state, &mut component_access);
+        Q::update_component_access(&fetch_term, &mut component_access);
 
         // Use a temporary empty FilteredAccess for filters. This prevents them from conflicting with the
         // main Query's `fetch_state` access. Filters are allowed to conflict with the main query fetch
         // because they are evaluated *before* a specific reference is constructed.
         let mut filter_component_access = FilteredAccess::default();
-        F::update_component_access(&filter_state, &mut filter_component_access);
+        F::update_component_access(&filter_term, &mut filter_component_access);
 
         // Merge the temporary filter access with the main access. This ensures that filter access is
         // properly considered in a global "cross-query" context (both within systems and across systems).
@@ -126,12 +119,14 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
             archetype_generation: ArchetypeGeneration::initial(),
             matched_table_ids: Vec::new(),
             matched_archetype_ids: Vec::new(),
-            fetch_state,
-            filter_state,
+            fetch_state: fetch_term,
+            filter_state: filter_term,
             component_access,
             matched_tables: Default::default(),
             matched_archetypes: Default::default(),
             archetype_component_access: Default::default(),
+            _fetch_marker: Default::default(),
+            _filter_maker: Default::default(),
         };
         state.update_archetypes(world);
         state

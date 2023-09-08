@@ -124,11 +124,6 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
     let marker_name =
         ensure_no_collision(format_ident!("_world_query_derive_marker"), tokens.clone());
 
-    // Generate a name for the state struct that doesn't conflict
-    // with the struct definition.
-    let state_struct_name = Ident::new(&format!("{struct_name}State"), Span::call_site());
-    let state_struct_name = ensure_no_collision(state_struct_name, tokens);
-
     let Data::Struct(DataStruct { fields, .. }) = &ast.data else {
         return syn::Error::new(
             Span::call_site(),
@@ -254,8 +249,6 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                 type Item<'__w> = #item_struct_name #user_ty_generics_with_world;
                 type Fetch<'__w> = #fetch_struct_name #user_ty_generics_with_world;
                 type ReadOnly = #read_only_struct_name #user_ty_generics;
-                type State = #state_struct_name #user_ty_generics;
-                type Config = ();
 
                 fn shrink<'__wlong: '__wshort, '__wshort>(
                     item: <#struct_name #user_ty_generics as #path::query::WorldQuery>::Item<'__wlong>
@@ -269,15 +262,16 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
 
                 unsafe fn init_fetch<'__w>(
                     _world: #path::world::unsafe_world_cell::UnsafeWorldCell<'__w>,
-                    state: &Self::State,
+                    term: &#path::query::Term,
                     _last_run: #path::component::Tick,
                     _this_run: #path::component::Tick,
                 ) -> <Self as #path::query::WorldQuery>::Fetch<'__w> {
+                    let mut terms = term.iter();
                     #fetch_struct_name {
                         #(#named_field_idents:
                             <#field_types>::init_fetch(
                                 _world,
-                                &state.#named_field_idents,
+                                terms.next().unwrap(),
                                 _last_run,
                                 _this_run,
                             ),
@@ -294,21 +288,23 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                 #[inline]
                 unsafe fn set_archetype<'__w>(
                     _fetch: &mut <Self as #path::query::WorldQuery>::Fetch<'__w>,
-                    _state: &Self::State,
+                    _term: &#path::query::Term,
                     _archetype: &'__w #path::archetype::Archetype,
                     _table: &'__w #path::storage::Table
                 ) {
-                    #(<#field_types>::set_archetype(&mut _fetch.#named_field_idents, &_state.#named_field_idents, _archetype, _table);)*
+                    let mut terms = _term.iter();
+                    #(<#field_types>::set_archetype(&mut _fetch.#named_field_idents, terms.next().unwrap(), _archetype, _table);)*
                 }
 
                 /// SAFETY: we call `set_table` for each member that implements `Fetch`
                 #[inline]
                 unsafe fn set_table<'__w>(
                     _fetch: &mut <Self as #path::query::WorldQuery>::Fetch<'__w>,
-                    _state: &Self::State,
+                    _term: &#path::query::Term,
                     _table: &'__w #path::storage::Table
                 ) {
-                    #(<#field_types>::set_table(&mut _fetch.#named_field_idents, &_state.#named_field_idents, _table);)*
+                    let mut terms = _term.iter();
+                    #(<#field_types>::set_table(&mut _fetch.#named_field_idents, terms.next().unwrap(), _table);)*
                 }
 
                 /// SAFETY: we call `fetch` for each member that implements `Fetch`.
@@ -333,30 +329,33 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                     true #(&& <#field_types>::filter_fetch(&mut _fetch.#named_field_idents, _entity, _table_row))*
                 }
 
-                fn update_component_access(state: &Self::State, _access: &mut #path::query::FilteredAccess<#path::component::ComponentId>) {
-                    #( <#field_types>::update_component_access(&state.#named_field_idents, _access); )*
+                fn update_component_access(term: &#path::query::Term, _access: &mut #path::query::FilteredAccess<#path::component::ComponentId>) {
+                    let mut terms = term.iter();
+                    #( <#field_types>::update_component_access(terms.next().unwrap(), _access); )*
                 }
 
                 fn update_archetype_component_access(
-                    state: &Self::State,
+                    term: &#path::query::Term,
                     _archetype: &#path::archetype::Archetype,
                     _access: &mut #path::query::Access<#path::archetype::ArchetypeComponentId>
                 ) {
+                    let mut terms = term.iter();
                     #(
-                        <#field_types>::update_archetype_component_access(&state.#named_field_idents, _archetype, _access);
+                        <#field_types>::update_archetype_component_access(terms.next().unwrap(), _archetype, _access);
                     )*
                 }
 
-                fn init_state(_config: Self::Config, world: &mut #path::world::World) -> #state_struct_name #user_ty_generics {
-                    #state_struct_name {
-                        // TODO: instead of using `Default::default` for the config (and thus failing to compile on query types needing configuration like `Ptr<'_>`)
-                        // we could have a tuple with configuration for each field, or generate a mirror struct with the same field names but storing the configuration values
-                        #(#named_field_idents: <#field_types>::init_state(Default::default(), world),)*
-                    }
+                fn init_state(world: &mut #path::world::World) -> #path::query::Term {
+                    #path::query::Term::group(
+                        vec![
+                            #(<#field_types>::init_state(world),)*
+                        ]
+                    )
                 }
 
-                fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(#path::component::ComponentId) -> bool) -> bool {
-                    true #(&& <#field_types>::matches_component_set(&state.#named_field_idents, _set_contains_id))*
+                fn matches_component_set(term: &#path::query::Term, _set_contains_id: &impl Fn(#path::component::ComponentId) -> bool) -> bool {
+                    let mut terms = term.iter();
+                    true #(&& <#field_types>::matches_component_set(terms.next().unwrap(), _set_contains_id))*
                 }
             }
         };
@@ -417,15 +416,6 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
             for #read_only_struct_name #user_ty_generics #user_where_clauses {}
 
         const _: () = {
-            #[doc(hidden)]
-            #[doc = "Automatically generated internal [`WorldQuery`] state type for [`"]
-            #[doc = stringify!(#struct_name)]
-            #[doc = "`], used for caching."]
-            #[automatically_derived]
-            #visibility struct #state_struct_name #user_impl_generics #user_where_clauses {
-                #(#named_field_idents: <#field_types as #path::query::WorldQuery>::State,)*
-            }
-
             #mutable_impl
 
             #read_only_impl
