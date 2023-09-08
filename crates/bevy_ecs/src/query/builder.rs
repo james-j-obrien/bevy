@@ -17,8 +17,16 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryBuilder<Q, F> {
         }
     }
 
-    pub fn build(self, world: &mut World) -> QueryState<Q, F> {
-        QueryState::new_with_config(world, self.fetch_config, self.filter_config)
+    pub fn build(&mut self, world: &mut World) -> QueryState<Q, F> {
+        let fetch_config = std::mem::replace(
+            &mut self.fetch_config,
+            <<Q as WorldQuery>::Config as Default>::default(),
+        );
+        let filter_config = std::mem::replace(
+            &mut self.filter_config,
+            <<F as WorldQuery>::Config as Default>::default(),
+        );
+        QueryState::new_with_config(world, fetch_config, filter_config)
     }
 
     pub fn config<const N: u32, T>(&mut self, value: T) -> &mut Self
@@ -92,11 +100,12 @@ mod tests {
         let component_id_a = world.component_id::<A>().unwrap();
         let component_id_b = world.component_id::<B>().unwrap();
 
-        let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new();
-        query.config::<1, _>(component_id_a);
-        query.config::<2, _>(component_id_b);
-        let mut state = query.build(&mut world);
-        let (e, a, b) = state.single(&world);
+        let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new()
+            .config::<1, _>(component_id_a)
+            .config::<2, _>(component_id_b)
+            .build(&mut world);
+
+        let (e, a, b) = query.single(&world);
 
         assert_eq!(e, entity);
 
