@@ -21,7 +21,7 @@
 
 use crate::{
     bundle::BundleId,
-    component::{ComponentId, StorageType},
+    component::StorageType,
     entity::{Entity, EntityLocation},
     storage::{ImmutableSparseSet, SparseArray, SparseSet, SparseSetIndex, TableId, TableRow},
 };
@@ -296,15 +296,15 @@ pub struct Archetype {
     table_id: TableId,
     edges: Edges,
     entities: Vec<ArchetypeEntity>,
-    components: ImmutableSparseSet<ComponentId, ArchetypeComponentInfo>,
+    components: ImmutableSparseSet<Entity, ArchetypeComponentInfo>,
 }
 
 impl Archetype {
     pub(crate) fn new(
         id: ArchetypeId,
         table_id: TableId,
-        table_components: impl Iterator<Item = (ComponentId, ArchetypeComponentId)>,
-        sparse_set_components: impl Iterator<Item = (ComponentId, ArchetypeComponentId)>,
+        table_components: impl Iterator<Item = (Entity, ArchetypeComponentId)>,
+        sparse_set_components: impl Iterator<Item = (Entity, ArchetypeComponentId)>,
     ) -> Self {
         let (min_table, _) = table_components.size_hint();
         let (min_sparse, _) = sparse_set_components.size_hint();
@@ -363,7 +363,7 @@ impl Archetype {
     ///
     /// [`Table`]: crate::storage::Table
     #[inline]
-    pub fn table_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+    pub fn table_components(&self) -> impl Iterator<Item = Entity> + '_ {
         self.components
             .iter()
             .filter(|(_, component)| component.storage_type == StorageType::Table)
@@ -376,7 +376,7 @@ impl Archetype {
     ///
     /// [`ComponentSparseSet`]: crate::storage::ComponentSparseSet
     #[inline]
-    pub fn sparse_set_components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+    pub fn sparse_set_components(&self) -> impl Iterator<Item = Entity> + '_ {
         self.components
             .iter()
             .filter(|(_, component)| component.storage_type == StorageType::SparseSet)
@@ -387,7 +387,7 @@ impl Archetype {
     ///
     /// All of the IDs are unique.
     #[inline]
-    pub fn components(&self) -> impl Iterator<Item = ComponentId> + '_ {
+    pub fn components(&self) -> impl Iterator<Item = Entity> + '_ {
         self.components.indices()
     }
 
@@ -492,7 +492,7 @@ impl Archetype {
 
     /// Checks if the archetype contains a specific component. This runs in `O(1)` time.
     #[inline]
-    pub fn contains(&self, component_id: ComponentId) -> bool {
+    pub fn contains(&self, component_id: Entity) -> bool {
         self.components.contains(component_id)
     }
 
@@ -500,7 +500,7 @@ impl Archetype {
     /// Returns `None` if the component is not part of the archetype.
     /// This runs in `O(1)` time.
     #[inline]
-    pub fn get_storage_type(&self, component_id: ComponentId) -> Option<StorageType> {
+    pub fn get_storage_type(&self, component_id: Entity) -> Option<StorageType> {
         self.components
             .get(component_id)
             .map(|info| info.storage_type)
@@ -510,10 +510,7 @@ impl Archetype {
     /// Returns `None` if the component is not part of the archetype.
     /// This runs in `O(1)` time.
     #[inline]
-    pub fn get_archetype_component_id(
-        &self,
-        component_id: ComponentId,
-    ) -> Option<ArchetypeComponentId> {
+    pub fn get_archetype_component_id(&self, component_id: Entity) -> Option<ArchetypeComponentId> {
         self.components
             .get(component_id)
             .map(|info| info.archetype_component_id)
@@ -543,8 +540,8 @@ impl ArchetypeGeneration {
 
 #[derive(Hash, PartialEq, Eq)]
 struct ArchetypeIdentity {
-    table_components: Box<[ComponentId]>,
-    sparse_set_components: Box<[ComponentId]>,
+    table_components: Box<[Entity]>,
+    sparse_set_components: Box<[Entity]>,
 }
 
 /// An opaque unique joint ID for a [`Component`] in an [`Archetype`] within a [`World`].
@@ -689,8 +686,8 @@ impl Archetypes {
     pub(crate) fn get_id_or_insert(
         &mut self,
         table_id: TableId,
-        table_components: Vec<ComponentId>,
-        sparse_set_components: Vec<ComponentId>,
+        table_components: Vec<Entity>,
+        sparse_set_components: Vec<Entity>,
     ) -> ArchetypeId {
         let archetype_identity = ArchetypeIdentity {
             sparse_set_components: sparse_set_components.clone().into_boxed_slice(),

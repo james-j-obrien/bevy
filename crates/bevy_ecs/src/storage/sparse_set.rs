@@ -1,5 +1,5 @@
 use crate::{
-    component::{ComponentId, ComponentInfo, ComponentTicks, Tick, TickCells},
+    component::{ComponentInfo, ComponentTicks, Tick, TickCells},
     entity::Entity,
     storage::{Column, TableRow},
 };
@@ -86,6 +86,16 @@ impl<I: SparseSetIndex, V> SparseArray<I, V> {
             .get_mut(index)
             .map(|v| v.as_mut())
             .unwrap_or(None)
+    }
+
+    /// Returns a reference to the value at `index`.
+    ///
+    /// Returns `None` if `index` does not have a value or if `index` is out of bounds.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: I) -> &V {
+        let index = index.sparse_set_index();
+        // TODO: as_ref check
+        unsafe { self.values.get_unchecked(index).as_ref().unwrap_unchecked() }
     }
 
     /// Removes and returns the value stored at `index`.
@@ -494,6 +504,12 @@ impl<I: SparseSetIndex, V> SparseSet<I, V> {
         }
     }
 
+    /// TODO: Docs
+    pub unsafe fn get_unchecked(&self, index: I) -> &V {
+        let dense_index = self.sparse.get_unchecked(index);
+        unsafe { self.dense.get_unchecked(*dense_index) }
+    }
+
     /// Returns `true` if the sparse set contains no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -568,7 +584,7 @@ impl_sparse_set_index!(u8, u16, u32, u64, usize);
 /// Can be accessed via [`Storages`](crate::storage::Storages)
 #[derive(Default)]
 pub struct SparseSets {
-    sets: SparseSet<ComponentId, ComponentSparseSet>,
+    sets: SparseSet<Entity, ComponentSparseSet>,
 }
 
 impl SparseSets {
@@ -586,14 +602,14 @@ impl SparseSets {
 
     /// An Iterator visiting all ([`ComponentId`], [`ComponentSparseSet`]) pairs.
     /// NOTE: Order is not guaranteed.
-    pub fn iter(&self) -> impl Iterator<Item = (ComponentId, &ComponentSparseSet)> {
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, &ComponentSparseSet)> {
         self.sets.iter().map(|(id, data)| (*id, data))
     }
 
     /// Gets a reference to the [`ComponentSparseSet`] of a [`ComponentId`].
     #[inline]
-    pub fn get(&self, component_id: ComponentId) -> Option<&ComponentSparseSet> {
-        self.sets.get(component_id)
+    pub fn get(&self, entity: Entity) -> Option<&ComponentSparseSet> {
+        self.sets.get(entity)
     }
 
     /// Gets a mutable reference of [`ComponentSparseSet`] of a [`ComponentInfo`].
@@ -613,8 +629,8 @@ impl SparseSets {
     }
 
     /// Gets a mutable reference to the [`ComponentSparseSet`] of a [`ComponentId`].
-    pub(crate) fn get_mut(&mut self, component_id: ComponentId) -> Option<&mut ComponentSparseSet> {
-        self.sets.get_mut(component_id)
+    pub(crate) fn get_mut(&mut self, entity: Entity) -> Option<&mut ComponentSparseSet> {
+        self.sets.get_mut(entity)
     }
 
     /// Clear entities stored in each [`ComponentSparseSet`]
@@ -636,7 +652,7 @@ mod tests {
     use super::SparseSets;
     use crate::{
         self as bevy_ecs,
-        component::{Component, ComponentDescriptor, ComponentId, ComponentInfo},
+        component::{Component, ComponentDescriptor, ComponentInfo},
         entity::Entity,
         storage::SparseSet,
     };
@@ -720,12 +736,12 @@ mod tests {
         collected_sets.sort();
         assert_eq!(
             collected_sets,
-            vec![(ComponentId::new(1), 0), (ComponentId::new(2), 0),]
+            vec![(Entity::new(1, 0), 0), (Entity::new(2, 0), 0),]
         );
 
-        fn init_component<T: Component>(sets: &mut SparseSets, id: usize) {
+        fn init_component<T: Component>(sets: &mut SparseSets, id: u32) {
             let descriptor = ComponentDescriptor::new::<T>();
-            let id = ComponentId::new(id);
+            let id = Entity::new(id, 0);
             let info = ComponentInfo::new(id, descriptor);
             sets.get_or_insert(&info);
         }

@@ -40,11 +40,15 @@ mod map_entities;
 pub use map_entities::*;
 
 use crate::{
-    archetype::{ArchetypeId, ArchetypeRow},
-    storage::{SparseSetIndex, TableId, TableRow},
+    archetype::{ArchetypeId, ArchetypeRow, Archetypes},
+    storage::{SparseSetIndex, Storages, TableId, TableRow},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryFrom, fmt, mem, sync::atomic::Ordering};
+use std::{
+    convert::TryFrom,
+    fmt, mem,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 #[cfg(target_has_atomic = "64")]
 use std::sync::atomic::AtomicI64 as AtomicIdCursor;
@@ -358,16 +362,29 @@ pub struct Entities {
     /// [`flush`]: Entities::flush
     pending: Vec<u32>,
     free_cursor: AtomicIdCursor,
+    static_component_cursor: AtomicU32,
+    static_component_count: u32,
     /// Stores the number of free entities for [`len`](Entities::len)
     len: u32,
 }
 
+impl Default for Entities {
+    fn default() -> Self {
+        Self::new(Self::RESERVED_COMPONENT_ENTITIES)
+    }
+}
+
 impl Entities {
-    pub(crate) const fn new() -> Self {
+    /// TODO: Docs
+    pub const RESERVED_COMPONENT_ENTITIES: u32 = 256;
+
+    pub(crate) fn new(reserved_components: u32) -> Self {
         Entities {
-            meta: Vec::new(),
+            meta: vec![EntityMeta::EMPTY; reserved_components as usize],
             pending: Vec::new(),
             free_cursor: AtomicIdCursor::new(0),
+            static_component_cursor: AtomicU32::new(0),
+            static_component_count: 0,
             len: 0,
         }
     }
@@ -440,6 +457,20 @@ impl Entities {
                 generation: 0,
                 index: u32::try_from(self.meta.len() as IdCursor - n).expect("too many entities"),
             }
+        }
+    }
+
+    /// TODO: Docs
+    pub fn reserve_component(&self) -> Entity {
+        let index = self.static_component_cursor.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(
+            index < Self::RESERVED_COMPONENT_ENTITIES,
+            "number of static components exceeds reserved entities"
+        );
+        // Could just call reserve_entity here instead of assert
+        Entity {
+            generation: 0,
+            index,
         }
     }
 
@@ -588,7 +619,8 @@ impl Entities {
 
     /// Clears all [`Entity`] from the World.
     pub fn clear(&mut self) {
-        self.meta.clear();
+        self.meta
+            .truncate(Self::RESERVED_COMPONENT_ENTITIES as usize);
         self.pending.clear();
         *self.free_cursor.get_mut() = 0;
         self.len = 0;
@@ -667,6 +699,37 @@ impl Entities {
 
     fn needs_flush(&mut self) -> bool {
         *self.free_cursor.get_mut() != self.pending.len() as IdCursor
+            || *self.static_component_cursor.get_mut() != self.static_component_count
+    }
+
+    /// TODO: Docs
+    pub fn flush_all(&mut self, archetypes: &mut Archetypes, storages: &mut Storages) {
+        let empty_archetype = archetypes.empty_mut();
+        let table = &mut storages.tables[empty_archetype.table_id()];
+        // PERF: consider pre-allocating space for flushed entities
+        // SAFETY: entity is set to a valid location
+        unsafe {
+            self.flush(|entity, location| {
+                // SAFETY: no components are allocated by archetype.allocate() because the archetype
+                // is empty
+                *location = empty_archetype.allocate(entity, table.allocate(entity));
+            });
+        }
+
+        let component_cursor = self.static_component_cursor.load(Ordering::Relaxed);
+        for index in self.static_component_count..component_cursor {
+            let entity = Entity {
+                generation: 0,
+                index,
+            };
+            unsafe {
+                self.meta[index as usize] = EntityMeta {
+                    generation: 0,
+                    location: empty_archetype.allocate(entity, table.allocate(entity)),
+                };
+            }
+        }
+        self.static_component_count = component_cursor;
     }
 
     /// Allocates space for entities previously reserved with [`reserve_entity`](Entities::reserve_entity) or
@@ -844,7 +907,7 @@ mod tests {
 
     #[test]
     fn reserve_entity_len() {
-        let mut e = Entities::new();
+        let mut e = Entities::default();
         e.reserve_entity();
         // SAFETY: entity_location is left invalid
         unsafe { e.flush(|_, _| {}) };
@@ -853,7 +916,7 @@ mod tests {
 
     #[test]
     fn get_reserved_and_invalid() {
-        let mut entities = Entities::new();
+        let mut entities = Entities::default();
         let e = entities.reserve_entity();
         assert!(entities.contains(e));
         assert!(entities.get(e).is_none());
@@ -888,7 +951,7 @@ mod tests {
 
     #[test]
     fn reserve_generations() {
-        let mut entities = Entities::new();
+        let mut entities = Entities::new(0);
         let entity = entities.alloc();
         entities.free(entity);
 
@@ -899,7 +962,7 @@ mod tests {
     fn reserve_generations_and_alloc() {
         const GENERATIONS: u32 = 10;
 
-        let mut entities = Entities::new();
+        let mut entities = Entities::new(0);
         let entity = entities.alloc();
         entities.free(entity);
 

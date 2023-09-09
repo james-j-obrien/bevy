@@ -1,5 +1,5 @@
 use crate::{
-    component::{ComponentId, ComponentInfo, ComponentTicks, Components, Tick, TickCells},
+    component::{ComponentInfo, ComponentTicks, Components, Tick, TickCells},
     entity::Entity,
     query::DebugCheckedUnwrap,
     storage::{blob_vec::BlobVec, ImmutableSparseSet, SparseSet},
@@ -512,7 +512,7 @@ impl Column {
 /// [`add_column`]: Self::add_column
 /// [`build`]: Self::build
 pub(crate) struct TableBuilder {
-    columns: SparseSet<ComponentId, Column>,
+    columns: SparseSet<Entity, Column>,
     capacity: usize,
 }
 
@@ -554,7 +554,7 @@ impl TableBuilder {
 /// [`Component`]: crate::component::Component
 /// [`World`]: crate::world::World
 pub struct Table {
-    columns: ImmutableSparseSet<ComponentId, Column>,
+    columns: ImmutableSparseSet<Entity, Column>,
     entities: Vec<Entity>,
 }
 
@@ -685,8 +685,8 @@ impl Table {
     ///
     /// [`Component`]: crate::component::Component
     #[inline]
-    pub fn get_column(&self, component_id: ComponentId) -> Option<&Column> {
-        self.columns.get(component_id)
+    pub fn get_column(&self, entity: Entity) -> Option<&Column> {
+        self.columns.get(entity)
     }
 
     /// Fetches a mutable reference to the [`Column`] for a given [`Component`] within the
@@ -696,8 +696,8 @@ impl Table {
     ///
     /// [`Component`]: crate::component::Component
     #[inline]
-    pub(crate) fn get_column_mut(&mut self, component_id: ComponentId) -> Option<&mut Column> {
-        self.columns.get_mut(component_id)
+    pub(crate) fn get_column_mut(&mut self, entity: Entity) -> Option<&mut Column> {
+        self.columns.get_mut(entity)
     }
 
     /// Checks if the table contains a [`Column`] for a given [`Component`].
@@ -706,8 +706,8 @@ impl Table {
     ///
     /// [`Component`]: crate::component::Component
     #[inline]
-    pub fn has_column(&self, component_id: ComponentId) -> bool {
-        self.columns.contains(component_id)
+    pub fn has_column(&self, entity: Entity) -> bool {
+        self.columns.contains(entity)
     }
 
     /// Reserves `additional` elements worth of capacity within the table.
@@ -792,7 +792,7 @@ impl Table {
 /// Can be accessed via [`Storages`](crate::storage::Storages)
 pub struct Tables {
     tables: Vec<Table>,
-    table_ids: HashMap<Vec<ComponentId>, TableId>,
+    table_ids: HashMap<Vec<Entity>, TableId>,
 }
 
 impl Default for Tables {
@@ -854,7 +854,7 @@ impl Tables {
     /// `component_ids` must contain components that exist in `components`
     pub(crate) unsafe fn get_id_or_insert(
         &mut self,
-        component_ids: &[ComponentId],
+        component_ids: &[Entity],
         components: &Components,
     ) -> TableId {
         let tables = &mut self.tables;
@@ -927,12 +927,13 @@ mod tests {
     fn table() {
         let mut components = Components::default();
         let mut storages = Storages::default();
-        let component_id = components.init_component::<W<TableRow>>(&mut storages);
+        let component_id =
+            components.init_component::<W<TableRow>>(&mut storages, || Entity::new(0, 0));
         let columns = &[component_id];
         let mut builder = TableBuilder::with_capacity(0, columns.len());
         builder.add_column(components.get_info(component_id).unwrap());
         let mut table = builder.build();
-        let entities = (0..200).map(Entity::from_raw).collect::<Vec<_>>();
+        let entities = (1..201).map(Entity::from_raw).collect::<Vec<_>>();
         for entity in &entities {
             // SAFETY: we allocate and immediately set data afterwards
             unsafe {

@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{Component, ComponentId, ComponentStorage, StorageType, Tick},
+    component::{Component, ComponentStorage, StorageType, Tick},
     entity::Entity,
     query::{Access, DebugCheckedUnwrap, FilteredAccess, WorldQuery},
     storage::{Column, ComponentSparseSet, Table, TableRow},
@@ -46,14 +46,14 @@ unsafe impl<T: Component> WorldQuery for With<T> {
     type Fetch<'w> = ();
     type Item<'w> = ();
     type ReadOnly = Self;
-    type State = ComponentId;
+    type State = Entity;
 
     fn shrink<'wlong: 'wshort, 'wshort>(_: Self::Item<'wlong>) -> Self::Item<'wshort> {}
 
     #[inline]
     unsafe fn init_fetch(
         _world: UnsafeWorldCell,
-        _state: &ComponentId,
+        _state: &Entity,
         _last_run: Tick,
         _this_run: Tick,
     ) {
@@ -69,12 +69,12 @@ unsafe impl<T: Component> WorldQuery for With<T> {
     const IS_ARCHETYPAL: bool = true;
 
     #[inline]
-    unsafe fn set_table(_fetch: &mut (), _state: &ComponentId, _table: &Table) {}
+    unsafe fn set_table(_fetch: &mut (), _state: &Entity, _table: &Table) {}
 
     #[inline]
     unsafe fn set_archetype(
         _fetch: &mut (),
-        _state: &ComponentId,
+        _state: &Entity,
         _archetype: &Archetype,
         _table: &Table,
     ) {
@@ -89,26 +89,23 @@ unsafe impl<T: Component> WorldQuery for With<T> {
     }
 
     #[inline]
-    fn update_component_access(&id: &ComponentId, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&id: &Entity, access: &mut FilteredAccess<Entity>) {
         access.and_with(id);
     }
 
     #[inline]
     fn update_archetype_component_access(
-        _state: &ComponentId,
+        _state: &Entity,
         _archetype: &Archetype,
         _access: &mut Access<ArchetypeComponentId>,
     ) {
     }
 
-    fn init_state(world: &mut World) -> ComponentId {
+    fn init_state(world: &mut World) -> Entity {
         world.init_component::<T>()
     }
 
-    fn matches_component_set(
-        &id: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
+    fn matches_component_set(&id: &Entity, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(id)
     }
 }
@@ -147,14 +144,14 @@ unsafe impl<T: Component> WorldQuery for Without<T> {
     type Fetch<'w> = ();
     type Item<'w> = ();
     type ReadOnly = Self;
-    type State = ComponentId;
+    type State = Entity;
 
     fn shrink<'wlong: 'wshort, 'wshort>(_: Self::Item<'wlong>) -> Self::Item<'wshort> {}
 
     #[inline]
     unsafe fn init_fetch(
         _world: UnsafeWorldCell,
-        _state: &ComponentId,
+        _state: &Entity,
         _last_run: Tick,
         _this_run: Tick,
     ) {
@@ -175,7 +172,7 @@ unsafe impl<T: Component> WorldQuery for Without<T> {
     #[inline]
     unsafe fn set_archetype(
         _fetch: &mut (),
-        _state: &ComponentId,
+        _state: &Entity,
         _archetype: &Archetype,
         _table: &Table,
     ) {
@@ -190,26 +187,23 @@ unsafe impl<T: Component> WorldQuery for Without<T> {
     }
 
     #[inline]
-    fn update_component_access(&id: &ComponentId, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&id: &Entity, access: &mut FilteredAccess<Entity>) {
         access.and_without(id);
     }
 
     #[inline]
     fn update_archetype_component_access(
-        _state: &ComponentId,
+        _state: &Entity,
         _archetype: &Archetype,
         _access: &mut Access<ArchetypeComponentId>,
     ) {
     }
 
-    fn init_state(world: &mut World) -> ComponentId {
+    fn init_state(world: &mut World) -> Entity {
         world.init_component::<T>()
     }
 
-    fn matches_component_set(
-        &id: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
+    fn matches_component_set(&id: &Entity, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         !set_contains_id(id)
     }
 }
@@ -341,7 +335,7 @@ macro_rules! impl_query_filter_tuple {
                 Self::fetch(fetch, entity, table_row)
             }
 
-            fn update_component_access(state: &Self::State, access: &mut FilteredAccess<ComponentId>) {
+            fn update_component_access(state: &Self::State, access: &mut FilteredAccess<Entity>) {
                 let ($($filter,)*) = state;
 
                 let mut _new_access = access.clone();
@@ -370,7 +364,7 @@ macro_rules! impl_query_filter_tuple {
                 ($($filter::init_state(world),)*)
             }
 
-            fn matches_component_set(_state: &Self::State, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+            fn matches_component_set(_state: &Self::State, _set_contains_id: &impl Fn(Entity) -> bool) -> bool {
                 let ($($filter,)*) = _state;
                 false $(|| $filter::matches_component_set($filter, _set_contains_id))*
             }
@@ -410,7 +404,7 @@ macro_rules! impl_tick_filter {
             type Fetch<'w> = $fetch_name<'w>;
             type Item<'w> = bool;
             type ReadOnly = Self;
-            type State = ComponentId;
+            type State = Entity;
 
             fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
                 item
@@ -419,7 +413,7 @@ macro_rules! impl_tick_filter {
             #[inline]
             unsafe fn init_fetch<'w>(
                 world: UnsafeWorldCell<'w>,
-                &id: &ComponentId,
+                &id: &Entity,
                 last_run: Tick,
                 this_run: Tick
             ) -> Self::Fetch<'w> {
@@ -450,7 +444,7 @@ macro_rules! impl_tick_filter {
             #[inline]
             unsafe fn set_table<'w>(
                 fetch: &mut Self::Fetch<'w>,
-                &component_id: &ComponentId,
+                &component_id: &Entity,
                 table: &'w Table
             ) {
                 fetch.table_ticks = Some(
@@ -465,7 +459,7 @@ macro_rules! impl_tick_filter {
             #[inline]
             unsafe fn set_archetype<'w>(
                 fetch: &mut Self::Fetch<'w>,
-                component_id: &ComponentId,
+                component_id: &Entity,
                 _archetype: &'w Archetype,
                 table: &'w Table
             ) {
@@ -511,7 +505,7 @@ macro_rules! impl_tick_filter {
             }
 
             #[inline]
-            fn update_component_access(&id: &ComponentId, access: &mut FilteredAccess<ComponentId>) {
+            fn update_component_access(&id: &Entity, access: &mut FilteredAccess<Entity>) {
                 if access.access().has_write(id) {
                     panic!("$state_name<{}> conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
                         std::any::type_name::<T>());
@@ -521,7 +515,7 @@ macro_rules! impl_tick_filter {
 
             #[inline]
             fn update_archetype_component_access(
-                &id: &ComponentId,
+                &id: &Entity,
                 archetype: &Archetype,
                 access: &mut Access<ArchetypeComponentId>,
             ) {
@@ -530,11 +524,11 @@ macro_rules! impl_tick_filter {
                 }
             }
 
-            fn init_state(world: &mut World) -> ComponentId {
+            fn init_state(world: &mut World) -> Entity {
                 world.init_component::<T>()
             }
 
-            fn matches_component_set(&id: &ComponentId, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+            fn matches_component_set(&id: &Entity, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
                 set_contains_id(id)
             }
         }

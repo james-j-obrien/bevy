@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use bevy_utils::{all_indices, all_tuples};
 
 use crate::{
-    component::ComponentId,
+    entity::Entity,
     prelude::{Component, World},
 };
 
@@ -25,20 +25,20 @@ pub enum TermOperator {
 
 #[derive(Default, Clone)]
 pub struct Term {
-    id: Option<ComponentId>,
+    id: Option<Entity>,
     pub access: TermAccess,
     pub oper: TermOperator,
 }
 
 impl Term {
-    pub fn none_id(id: ComponentId) -> Self {
+    pub fn none_id(id: Entity) -> Self {
         Self {
             id: Some(id),
             access: TermAccess::None,
             oper: TermOperator::Any,
         }
     }
-    pub fn read_id(id: ComponentId) -> Self {
+    pub fn read_id(id: Entity) -> Self {
         Self {
             id: Some(id),
             access: TermAccess::Read,
@@ -54,7 +54,7 @@ impl Term {
         }
     }
 
-    pub fn write_id(id: ComponentId) -> Self {
+    pub fn write_id(id: Entity) -> Self {
         Self {
             id: Some(id),
             access: TermAccess::Write,
@@ -70,7 +70,7 @@ impl Term {
         }
     }
 
-    pub fn with_id(id: ComponentId) -> Self {
+    pub fn with_id(id: Entity) -> Self {
         Self {
             id: Some(id),
             access: TermAccess::None,
@@ -78,7 +78,7 @@ impl Term {
         }
     }
 
-    pub fn without_id(id: ComponentId) -> Self {
+    pub fn without_id(id: Entity) -> Self {
         Self {
             id: Some(id),
             access: TermAccess::None,
@@ -86,17 +86,17 @@ impl Term {
         }
     }
 
-    pub fn set_id(&mut self, id: ComponentId) {
+    pub fn set_id(&mut self, id: Entity) {
         self.id = Some(id);
     }
 
-    pub fn id(&self) -> ComponentId {
+    pub fn id(&self) -> Entity {
         self.id.unwrap()
     }
 
     pub fn matches_component_set(
         terms: &Vec<Term>,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
+        set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         terms.iter().all(|term| match term.oper {
             TermOperator::With => set_contains_id(term.id()),
@@ -180,7 +180,7 @@ impl<'w, Q: WorldQuery> QueryBuilder<'w, Q> {
         self
     }
 
-    pub fn with_id(&mut self, id: ComponentId) -> &mut Self {
+    pub fn with_id(&mut self, id: Entity) -> &mut Self {
         self.terms.push(Term::with_id(id));
         self
     }
@@ -191,7 +191,7 @@ impl<'w, Q: WorldQuery> QueryBuilder<'w, Q> {
         self
     }
 
-    pub fn without_id(&mut self, id: ComponentId) -> &mut Self {
+    pub fn without_id(&mut self, id: Entity) -> &mut Self {
         self.terms.push(Term::without_id(id));
         self
     }
@@ -254,6 +254,9 @@ mod tests {
     #[derive(Component)]
     struct B(usize);
 
+    #[derive(Component)]
+    struct C(usize);
+
     #[test]
     fn test_builder_static() {
         let mut world = World::new();
@@ -301,15 +304,30 @@ mod tests {
     #[test]
     fn test_builder_with_without() {
         let mut world = World::new();
-        let entity_a = world.spawn(A(0)).id();
-        let entity_b = world.spawn(B(0)).id();
+        let entity_a = world.spawn((A(0), B(0))).id();
+        let entity_b = world.spawn((A(0), C(0))).id();
 
-        let mut query_a = QueryBuilder::<Entity>::new(&mut world).with::<A>().build();
+        let mut query_a = QueryBuilder::<Entity>::new(&mut world)
+            .with::<A>()
+            .without::<C>()
+            .build();
         assert_eq!(entity_a, query_a.single(&world));
 
         let mut query_b = QueryBuilder::<Entity>::new(&mut world)
-            .without::<A>()
+            .with::<A>()
+            .without::<B>()
             .build();
         assert_eq!(entity_b, query_b.single(&world));
+    }
+
+    #[test]
+    fn test_entity_components() {
+        let mut world = World::new();
+        let component = world.spawn_empty().id();
+        let entity = world.spawn_empty().insert_id(component).id();
+        let mut query = QueryBuilder::<Entity>::new(&mut world)
+            .with_id(component)
+            .build();
+        assert_eq!(entity, query.single(&world));
     }
 }

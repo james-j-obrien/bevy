@@ -1,6 +1,7 @@
 use crate::archetype::ArchetypeComponentId;
 use crate::change_detection::{MutUntyped, TicksMut};
-use crate::component::{ComponentId, ComponentTicks, Components, Tick, TickCells};
+use crate::component::{ComponentTicks, Components, Tick, TickCells};
+use crate::entity::Entity;
 use crate::storage::{Column, SparseSet, TableRow};
 use bevy_ptr::{OwningPtr, Ptr, UnsafeCellDeref};
 use std::{mem::ManuallyDrop, thread::ThreadId};
@@ -211,7 +212,7 @@ impl<const SEND: bool> ResourceData<SEND> {
 /// [`World`]: crate::world::World
 #[derive(Default)]
 pub struct Resources<const SEND: bool> {
-    resources: SparseSet<ComponentId, ResourceData<SEND>>,
+    resources: SparseSet<Entity, ResourceData<SEND>>,
 }
 
 impl<const SEND: bool> Resources<SEND> {
@@ -224,7 +225,7 @@ impl<const SEND: bool> Resources<SEND> {
     }
 
     /// Iterate over all resources that have been initialized, i.e. given a [`ComponentId`]
-    pub fn iter(&self) -> impl Iterator<Item = (ComponentId, &ResourceData<SEND>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, &ResourceData<SEND>)> {
         self.resources.iter().map(|(id, data)| (*id, data))
     }
 
@@ -239,7 +240,7 @@ impl<const SEND: bool> Resources<SEND> {
 
     /// Gets read-only access to a resource, if it exists.
     #[inline]
-    pub fn get(&self, component_id: ComponentId) -> Option<&ResourceData<SEND>> {
+    pub fn get(&self, component_id: Entity) -> Option<&ResourceData<SEND>> {
         self.resources.get(component_id)
     }
 
@@ -251,7 +252,7 @@ impl<const SEND: bool> Resources<SEND> {
 
     /// Gets mutable access to a resource, if it exists.
     #[inline]
-    pub(crate) fn get_mut(&mut self, component_id: ComponentId) -> Option<&mut ResourceData<SEND>> {
+    pub(crate) fn get_mut(&mut self, component_id: Entity) -> Option<&mut ResourceData<SEND>> {
         self.resources.get_mut(component_id)
     }
 
@@ -262,7 +263,7 @@ impl<const SEND: bool> Resources<SEND> {
     /// If `SEND` is true, this will panic if `component_id`'s `ComponentInfo` is not registered as being `Send` + `Sync`.
     pub(crate) fn initialize_with(
         &mut self,
-        component_id: ComponentId,
+        component_id: Entity,
         components: &Components,
         f: impl FnOnce() -> ArchetypeComponentId,
     ) -> &mut ResourceData<SEND> {

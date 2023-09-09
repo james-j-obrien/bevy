@@ -332,7 +332,7 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                     true #(&& <#field_types>::filter_fetch(&mut _fetch.#named_field_idents, _entity, _table_row))*
                 }
 
-                fn update_component_access(state: &Self::State, _access: &mut #path::query::FilteredAccess<#path::component::ComponentId>) {
+                fn update_component_access(state: &Self::State, _access: &mut #path::query::FilteredAccess<#path::entity::Entity>) {
                     #( <#field_types>::update_component_access(&state.#named_field_idents, _access); )*
                 }
 
@@ -352,7 +352,7 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(#path::component::ComponentId) -> bool) -> bool {
+                fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(#path::entity::Entity) -> bool) -> bool {
                     true #(&& <#field_types>::matches_component_set(&state.#named_field_idents, _set_contains_id))*
                 }
             }

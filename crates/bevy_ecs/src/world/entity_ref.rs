@@ -2,7 +2,7 @@ use crate::{
     archetype::{Archetype, ArchetypeId, Archetypes},
     bundle::{Bundle, BundleInfo, BundleInserter, DynamicBundle},
     change_detection::MutUntyped,
-    component::{Component, ComponentId, ComponentTicks, Components, StorageType},
+    component::{Component, ComponentTicks, Components, StorageType},
     entity::{Entities, Entity, EntityLocation},
     removal_detection::RemovedComponentEvents,
     storage::Storages,
@@ -85,7 +85,7 @@ impl<'w> EntityRef<'w> {
     /// - If you know the component's [`TypeId`] but not its [`ComponentId`], consider using
     /// [`Self::contains_type_id`].
     #[inline]
-    pub fn contains_id(&self, component_id: ComponentId) -> bool {
+    pub fn contains_id(&self, component_id: Entity) -> bool {
         self.0.contains_id(component_id)
     }
 
@@ -134,7 +134,7 @@ impl<'w> EntityRef<'w> {
     /// use this in cases where the actual component types are not known at
     /// compile time.**
     #[inline]
-    pub fn get_change_ticks_by_id(&self, component_id: ComponentId) -> Option<ComponentTicks> {
+    pub fn get_change_ticks_by_id(&self, component_id: Entity) -> Option<ComponentTicks> {
         // SAFETY: We have read-only access to all components of this entity.
         unsafe { self.0.get_change_ticks_by_id(component_id) }
     }
@@ -148,7 +148,7 @@ impl<'w> EntityRef<'w> {
     /// Unlike [`EntityRef::get`], this returns a raw pointer to the component,
     /// which is only valid while the `'w` borrow of the lifetime is active.
     #[inline]
-    pub fn get_by_id(&self, component_id: ComponentId) -> Option<Ptr<'w>> {
+    pub fn get_by_id(&self, component_id: Entity) -> Option<Ptr<'w>> {
         // SAFETY: We have read-only access to all components of this entity.
         unsafe { self.0.get_by_id(component_id) }
     }
@@ -272,7 +272,7 @@ impl<'w> EntityMut<'w> {
     /// - If you know the component's [`TypeId`] but not its [`ComponentId`], consider using
     /// [`Self::contains_type_id`].
     #[inline]
-    pub fn contains_id(&self, component_id: ComponentId) -> bool {
+    pub fn contains_id(&self, component_id: Entity) -> bool {
         self.0.contains_id(component_id)
     }
 
@@ -326,7 +326,7 @@ impl<'w> EntityMut<'w> {
     /// use this in cases where the actual component types are not known at
     /// compile time.**
     #[inline]
-    pub fn get_change_ticks_by_id(&self, component_id: ComponentId) -> Option<ComponentTicks> {
+    pub fn get_change_ticks_by_id(&self, component_id: Entity) -> Option<ComponentTicks> {
         self.as_readonly().get_change_ticks_by_id(component_id)
     }
 
@@ -339,7 +339,7 @@ impl<'w> EntityMut<'w> {
     /// Unlike [`EntityMut::get`], this returns a raw pointer to the component,
     /// which is only valid while the [`EntityMut`] is alive.
     #[inline]
-    pub fn get_by_id(&self, component_id: ComponentId) -> Option<Ptr<'_>> {
+    pub fn get_by_id(&self, component_id: Entity) -> Option<Ptr<'_>> {
         self.as_readonly().get_by_id(component_id)
     }
 
@@ -352,7 +352,7 @@ impl<'w> EntityMut<'w> {
     /// Unlike [`EntityMut::get_mut`], this returns a raw pointer to the component,
     /// which is only valid while the [`EntityMut`] is alive.
     #[inline]
-    pub fn get_mut_by_id(&mut self, component_id: ComponentId) -> Option<MutUntyped<'_>> {
+    pub fn get_mut_by_id(&mut self, component_id: Entity) -> Option<MutUntyped<'_>> {
         // SAFETY:
         // - `&mut self` ensures that no references exist to this entity's components.
         // - `as_unsafe_world_cell` gives mutable permission for all components on this entity
@@ -475,7 +475,7 @@ impl<'w> EntityWorldMut<'w> {
     /// - If you know the component's [`TypeId`] but not its [`ComponentId`], consider using
     /// [`Self::contains_type_id`].
     #[inline]
-    pub fn contains_id(&self, component_id: ComponentId) -> bool {
+    pub fn contains_id(&self, component_id: Entity) -> bool {
         self.as_unsafe_entity_cell_readonly()
             .contains_id(component_id)
     }
@@ -531,7 +531,7 @@ impl<'w> EntityWorldMut<'w> {
     /// use this in cases where the actual component types are not known at
     /// compile time.**
     #[inline]
-    pub fn get_change_ticks_by_id(&self, component_id: ComponentId) -> Option<ComponentTicks> {
+    pub fn get_change_ticks_by_id(&self, component_id: Entity) -> Option<ComponentTicks> {
         EntityRef::from(self).get_change_ticks_by_id(component_id)
     }
 
@@ -544,7 +544,7 @@ impl<'w> EntityWorldMut<'w> {
     /// Unlike [`EntityWorldMut::get`], this returns a raw pointer to the component,
     /// which is only valid while the [`EntityWorldMut`] is alive.
     #[inline]
-    pub fn get_by_id(&self, component_id: ComponentId) -> Option<Ptr<'_>> {
+    pub fn get_by_id(&self, component_id: Entity) -> Option<Ptr<'_>> {
         EntityRef::from(self).get_by_id(component_id)
     }
 
@@ -557,7 +557,7 @@ impl<'w> EntityWorldMut<'w> {
     /// Unlike [`EntityWorldMut::get_mut`], this returns a raw pointer to the component,
     /// which is only valid while the [`EntityWorldMut`] is alive.
     #[inline]
-    pub fn get_mut_by_id(&mut self, component_id: ComponentId) -> Option<MutUntyped<'_>> {
+    pub fn get_mut_by_id(&mut self, component_id: Entity) -> Option<MutUntyped<'_>> {
         // SAFETY:
         // - `&mut self` ensures that no references exist to this entity's components.
         // - `as_unsafe_world_cell` gives mutable permission for all components on this entity
@@ -568,11 +568,16 @@ impl<'w> EntityWorldMut<'w> {
     ///
     /// This will overwrite any previous value(s) of the same component type.
     pub fn insert<T: Bundle>(&mut self, bundle: T) -> &mut Self {
+        self.world.flush();
         let change_tick = self.world.change_tick();
-        let bundle_info = self
-            .world
-            .bundles
-            .init_info::<T>(&mut self.world.components, &mut self.world.storages);
+        let bundle_info = self.world.bundles.init_info::<T>(
+            &mut self.world.components,
+            &mut self.world.storages,
+            || self.world.entities.reserve_component(),
+        );
+        self.world
+            .entities
+            .flush_all(&mut self.world.archetypes, &mut self.world.storages);
         let mut bundle_inserter = bundle_info.get_bundle_inserter(
             &mut self.world.entities,
             &mut self.world.archetypes,
@@ -595,13 +600,48 @@ impl<'w> EntityWorldMut<'w> {
     ///
     /// You should prefer to use the typed API [`EntityWorldMut::insert`] where possible.
     ///
+    pub fn insert_id(&mut self, component_id: Entity) -> &mut Self {
+        let change_tick = self.world.change_tick();
+
+        let bundles = &mut self.world.bundles;
+        let components = &mut self.world.components;
+
+        let (bundle_info, storage_type) = bundles.init_component_info(components, component_id);
+        let bundle_inserter = bundle_info.get_bundle_inserter(
+            &mut self.world.entities,
+            &mut self.world.archetypes,
+            &self.world.components,
+            &mut self.world.storages,
+            self.location.archetype_id,
+            change_tick,
+        );
+
+        OwningPtr::make((), |component| unsafe {
+            self.location = insert_dynamic_bundle(
+                bundle_inserter,
+                self.entity,
+                self.location,
+                Some(component).into_iter(),
+                Some(storage_type).into_iter(),
+            );
+        });
+
+        self
+    }
+
+    /// Inserts a dynamic [`Component`] into the entity.
+    ///
+    /// This will overwrite any previous value(s) of the same component type.
+    ///
+    /// You should prefer to use the typed API [`EntityWorldMut::insert`] where possible.
+    ///
     /// # Safety
     ///
     /// - [`ComponentId`] must be from the same world as [`EntityWorldMut`]
     /// - [`OwningPtr`] must be a valid reference to the type represented by [`ComponentId`]
     pub unsafe fn insert_by_id(
         &mut self,
-        component_id: ComponentId,
+        component_id: Entity,
         component: OwningPtr<'_>,
     ) -> &mut Self {
         let change_tick = self.world.change_tick();
@@ -644,7 +684,7 @@ impl<'w> EntityWorldMut<'w> {
     /// - Each [`OwningPtr`] must be a valid reference to the type represented by [`ComponentId`]
     pub unsafe fn insert_by_ids<'a, I: Iterator<Item = OwningPtr<'a>>>(
         &mut self,
-        component_ids: &[ComponentId],
+        component_ids: &[Entity],
         iter_components: I,
     ) -> &mut Self {
         let change_tick = self.world.change_tick();
@@ -680,13 +720,18 @@ impl<'w> EntityWorldMut<'w> {
     // TODO: BundleRemover?
     #[must_use]
     pub fn take<T: Bundle>(&mut self) -> Option<T> {
+        self.world.flush();
         let archetypes = &mut self.world.archetypes;
         let storages = &mut self.world.storages;
         let components = &mut self.world.components;
         let entities = &mut self.world.entities;
         let removed_components = &mut self.world.removed_components;
 
-        let bundle_info = self.world.bundles.init_info::<T>(components, storages);
+        let bundle_info = self
+            .world
+            .bundles
+            .init_info::<T>(components, storages, || entities.reserve_component());
+        entities.flush_all(archetypes, storages);
         let old_location = self.location;
         // SAFETY: `archetype_id` exists because it is referenced in the old `EntityLocation` which is valid,
         // components exist in `bundle_info` because `Bundles::init_info` initializes a `BundleInfo` containing all components of the bundle type `T`
@@ -828,13 +873,18 @@ impl<'w> EntityWorldMut<'w> {
     /// Removes any components in the [`Bundle`] from the entity.
     // TODO: BundleRemover?
     pub fn remove<T: Bundle>(&mut self) -> &mut Self {
+        self.world.flush();
         let archetypes = &mut self.world.archetypes;
         let storages = &mut self.world.storages;
         let components = &mut self.world.components;
         let entities = &mut self.world.entities;
         let removed_components = &mut self.world.removed_components;
 
-        let bundle_info = self.world.bundles.init_info::<T>(components, storages);
+        let bundle_info = self
+            .world
+            .bundles
+            .init_info::<T>(components, storages, || entities.reserve_component());
+        entities.flush_all(archetypes, storages);
         let old_location = self.location;
 
         // SAFETY: `archetype_id` exists because it is referenced in the old `EntityLocation` which is valid,
@@ -893,6 +943,10 @@ impl<'w> EntityWorldMut<'w> {
     /// Despawns the current entity.
     pub fn despawn(self) {
         debug!("Despawning entity {:?}", self.entity);
+        debug_assert!(
+            self.id().index() >= Entities::RESERVED_COMPONENT_ENTITIES,
+            "Despawning a static component entity is unsupported"
+        );
         let world = self.world;
         world.flush();
         let location = world
@@ -1203,7 +1257,7 @@ pub(crate) unsafe fn take_component<'a>(
     storages: &'a mut Storages,
     components: &Components,
     removed_components: &mut RemovedComponentEvents,
-    component_id: ComponentId,
+    component_id: Entity,
     entity: Entity,
     location: EntityLocation,
 ) -> OwningPtr<'a> {
@@ -1236,7 +1290,7 @@ mod tests {
     use bevy_ptr::OwningPtr;
     use std::panic::AssertUnwindSafe;
 
-    use crate::{self as bevy_ecs, component::ComponentId, prelude::*, system::assert_is_system};
+    use crate::{self as bevy_ecs, prelude::*, system::assert_is_system};
 
     #[test]
     fn sorted_remove() {
@@ -1312,7 +1366,7 @@ mod tests {
 
     #[test]
     fn entity_ref_get_by_id_invalid_component_id() {
-        let invalid_component_id = ComponentId::new(usize::MAX);
+        let invalid_component_id = Entity::new(u32::MAX, 0);
 
         let mut world = World::new();
         let entity = world.spawn_empty().id();
@@ -1322,7 +1376,7 @@ mod tests {
 
     #[test]
     fn entity_mut_get_by_id_invalid_component_id() {
-        let invalid_component_id = ComponentId::new(usize::MAX);
+        let invalid_component_id = Entity::new(u32::MAX, 0);
 
         let mut world = World::new();
         let mut entity = world.spawn_empty();

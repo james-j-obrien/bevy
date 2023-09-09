@@ -17,7 +17,8 @@ use fixedbitset::FixedBitSet;
 
 use crate::{
     self as bevy_ecs,
-    component::{ComponentId, Components, Tick},
+    component::{Components, Tick},
+    entity::Entity,
     schedule::*,
     system::{BoxedSystem, Resource, System},
     world::World,
@@ -411,7 +412,7 @@ pub struct ScheduleGraph {
     dependency: Dag,
     ambiguous_with: UnGraphMap<NodeId, ()>,
     ambiguous_with_all: HashSet<NodeId>,
-    conflicting_systems: Vec<(NodeId, NodeId, Vec<ComponentId>)>,
+    conflicting_systems: Vec<(NodeId, NodeId, Vec<Entity>)>,
     changed: bool,
     settings: ScheduleBuildSettings,
 }
@@ -518,7 +519,7 @@ impl ScheduleGraph {
     ///
     /// If the `Vec<ComponentId>` is empty, the systems conflict on [`World`] access.
     /// Must be called after [`ScheduleGraph::build_schedule`] to be non-empty.
-    pub fn conflicting_systems(&self) -> &[(NodeId, NodeId, Vec<ComponentId>)] {
+    pub fn conflicting_systems(&self) -> &[(NodeId, NodeId, Vec<Entity>)] {
         &self.conflicting_systems
     }
 
@@ -1040,7 +1041,7 @@ impl ScheduleGraph {
         &self,
         flat_results_disconnected: &Vec<(NodeId, NodeId)>,
         ambiguous_with_flattened: &GraphMap<NodeId, (), Undirected>,
-    ) -> Vec<(NodeId, NodeId, Vec<ComponentId>)> {
+    ) -> Vec<(NodeId, NodeId, Vec<Entity>)> {
         let mut conflicting_systems = Vec::new();
         for &(a, b) in flat_results_disconnected {
             if ambiguous_with_flattened.contains_edge(a, b)
@@ -1524,7 +1525,7 @@ impl ScheduleGraph {
     /// if [`ScheduleBuildSettings::ambiguity_detection`] is [`LogLevel::Ignore`], this check is skipped
     fn optionally_check_conflicts(
         &self,
-        conflicts: &[(NodeId, NodeId, Vec<ComponentId>)],
+        conflicts: &[(NodeId, NodeId, Vec<Entity>)],
         components: &Components,
         schedule_label: &BoxedScheduleLabel,
     ) -> Result<(), ScheduleBuildError> {
@@ -1545,7 +1546,7 @@ impl ScheduleGraph {
 
     fn get_conflicts_error_message(
         &self,
-        ambiguities: &[(NodeId, NodeId, Vec<ComponentId>)],
+        ambiguities: &[(NodeId, NodeId, Vec<Entity>)],
         components: &Components,
     ) -> String {
         let n_ambiguities = ambiguities.len();
@@ -1573,7 +1574,7 @@ impl ScheduleGraph {
     /// convert conflics to human readable format
     pub fn conflicts_to_string<'a>(
         &'a self,
-        ambiguities: &'a [(NodeId, NodeId, Vec<ComponentId>)],
+        ambiguities: &'a [(NodeId, NodeId, Vec<Entity>)],
         components: &'a Components,
     ) -> impl Iterator<Item = (String, String, Vec<&str>)> + 'a {
         ambiguities

@@ -1,7 +1,7 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
     change_detection::{MutUntyped, Ticks, TicksMut},
-    component::{Component, ComponentId, ComponentStorage, StorageType, Tick},
+    component::{Component, ComponentStorage, StorageType, Tick},
     entity::Entity,
     query::{Access, DebugCheckedUnwrap, FilteredAccess},
     storage::{ComponentSparseSet, Table, TableRow},
@@ -425,7 +425,7 @@ pub unsafe trait WorldQuery {
     /// Adds any component accesses used by this [`WorldQuery`] to `access`.
     // This does not have a default body of `{}` because 99% of cases need to add accesses
     // and forgetting to do so would be unsound.
-    fn update_component_access(state: &Self::State, access: &mut FilteredAccess<ComponentId>);
+    fn update_component_access(state: &Self::State, access: &mut FilteredAccess<Entity>);
 
     /// For the given `archetype`, adds any component accessed used by this [`WorldQuery`] to `access`.
     // This does not have a default body of `{}` because 99% of cases need to add accesses
@@ -444,7 +444,7 @@ pub unsafe trait WorldQuery {
     /// Returns `true` if this query matches a set of components. Otherwise, returns `false`.
     fn matches_component_set(
         state: &Self::State,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
+        set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool;
 }
 
@@ -505,7 +505,7 @@ unsafe impl WorldQuery for Entity {
         entity
     }
 
-    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<ComponentId>) {}
+    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<Entity>) {}
 
     fn update_archetype_component_access(
         _state: &Self::State,
@@ -518,7 +518,7 @@ unsafe impl WorldQuery for Entity {
 
     fn matches_component_set(
         _state: &Self::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         true
     }
@@ -576,7 +576,7 @@ unsafe impl WorldQuery for EntityRef<'_> {
         EntityRef::new(cell)
     }
 
-    fn update_component_access(_state: &Self::State, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(_state: &Self::State, access: &mut FilteredAccess<Entity>) {
         assert!(
             !access.access().has_any_write(),
             "EntityRef conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
@@ -598,7 +598,7 @@ unsafe impl WorldQuery for EntityRef<'_> {
 
     fn matches_component_set(
         _state: &Self::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         true
     }
@@ -656,7 +656,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
         EntityMut::new(cell)
     }
 
-    fn update_component_access(_state: &Self::State, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(_state: &Self::State, access: &mut FilteredAccess<Entity>) {
         assert!(
             !access.access().has_any_read(),
             "EntityMut conflicts with a previous access in this query. Exclusive access cannot coincide with any other accesses.",
@@ -678,7 +678,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
 
     fn matches_component_set(
         _state: &Self::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         true
     }
@@ -787,7 +787,7 @@ unsafe impl<T: Component> WorldQuery for &T {
         }
     }
 
-    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<Entity>) {
         let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
@@ -812,7 +812,7 @@ unsafe impl<T: Component> WorldQuery for &T {
         Term::read_id(id)
     }
 
-    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(term.id())
     }
 }
@@ -940,7 +940,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
         }
     }
 
-    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<Entity>) {
         let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
@@ -964,7 +964,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
         Term::read_id(world.init_component::<T>())
     }
 
-    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(term.id())
     }
 }
@@ -1092,7 +1092,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
         }
     }
 
-    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<Entity>) {
         let component_id = term.id();
         assert!(
             !access.access().has_read(component_id),
@@ -1116,7 +1116,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
         Term::write_id(world.init_component::<T>())
     }
 
-    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(term.id())
     }
 }
@@ -1196,7 +1196,7 @@ unsafe impl<T: WorldQuery> WorldQuery for Option<T> {
             .then(|| T::fetch(&mut fetch.fetch, entity, table_row))
     }
 
-    fn update_component_access(state: &T::State, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(state: &T::State, access: &mut FilteredAccess<Entity>) {
         // We don't want to add the `with`/`without` of `T` as `Option<T>` will match things regardless of
         // `T`'s filters. for example `Query<(Option<&U>, &mut V)>` will match every entity with a `V` component
         // regardless of whether it has a `U` component. If we don't do this the query will not conflict with
@@ -1222,7 +1222,7 @@ unsafe impl<T: WorldQuery> WorldQuery for Option<T> {
 
     fn matches_component_set(
         _state: &T::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         true
     }
@@ -1340,7 +1340,7 @@ unsafe impl<T: Component> WorldQuery for Has<T> {
         *fetch
     }
 
-    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<Entity>) {
         // Do nothing as presence of `Has<T>` never affects whether two queries are disjoint
     }
 
@@ -1357,7 +1357,7 @@ unsafe impl<T: Component> WorldQuery for Has<T> {
 
     fn matches_component_set(
         _state: &Self::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         // `Has<T>` always matches
         true
@@ -1437,7 +1437,7 @@ macro_rules! impl_tuple_fetch {
                 true $(&& $name::filter_fetch($name, _entity, _table_row))*
             }
 
-            fn update_component_access(state: &Self::State, _access: &mut FilteredAccess<ComponentId>) {
+            fn update_component_access(state: &Self::State, _access: &mut FilteredAccess<Entity>) {
                 let ($($name,)*) = state;
                 $($name::update_component_access($name, _access);)*
             }
@@ -1452,7 +1452,7 @@ macro_rules! impl_tuple_fetch {
                 ($($name::init_state(_world),)*)
             }
 
-            fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+            fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(Entity) -> bool) -> bool {
                 let ($($name,)*) = state;
                 true $(&& $name::matches_component_set($name, _set_contains_id))*
             }
@@ -1542,7 +1542,7 @@ macro_rules! impl_anytuple_fetch {
                 )*)
             }
 
-            fn update_component_access(state: &Self::State, _access: &mut FilteredAccess<ComponentId>) {
+            fn update_component_access(state: &Self::State, _access: &mut FilteredAccess<Entity>) {
                 let ($($name,)*) = state;
 
                 let mut _new_access = _access.clone();
@@ -1575,7 +1575,7 @@ macro_rules! impl_anytuple_fetch {
                 ($($name::init_state(_world),)*)
             }
 
-            fn matches_component_set(_state: &Self::State, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+            fn matches_component_set(_state: &Self::State, _set_contains_id: &impl Fn(Entity) -> bool) -> bool {
                 let ($($name,)*) = _state;
                 false $(|| $name::matches_component_set($name, _set_contains_id))*
             }
@@ -1636,7 +1636,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for NopWorldQuery<Q> {
     ) -> Self::Item<'w> {
     }
 
-    fn update_component_access(_state: &Q::State, _access: &mut FilteredAccess<ComponentId>) {}
+    fn update_component_access(_state: &Q::State, _access: &mut FilteredAccess<Entity>) {}
 
     fn update_archetype_component_access(
         _state: &Q::State,
@@ -1651,7 +1651,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for NopWorldQuery<Q> {
 
     fn matches_component_set(
         state: &Self::State,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
+        set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         Q::matches_component_set(state, set_contains_id)
     }
@@ -1701,7 +1701,7 @@ unsafe impl<T: ?Sized> WorldQuery for PhantomData<T> {
     ) -> Self::Item<'w> {
     }
 
-    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<ComponentId>) {}
+    fn update_component_access(_state: &Self::State, _access: &mut FilteredAccess<Entity>) {}
 
     fn update_archetype_component_access(
         _state: &Self::State,
@@ -1714,7 +1714,7 @@ unsafe impl<T: ?Sized> WorldQuery for PhantomData<T> {
 
     fn matches_component_set(
         _state: &Self::State,
-        _set_contains_id: &impl Fn(ComponentId) -> bool,
+        _set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         true
     }
@@ -1812,7 +1812,7 @@ unsafe impl WorldQuery for Ptr<'_> {
         }
     }
 
-    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<Entity>) {
         let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
@@ -1836,7 +1836,7 @@ unsafe impl WorldQuery for Ptr<'_> {
         Term::read()
     }
 
-    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(term.id())
     }
 }
@@ -1960,7 +1960,7 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
         }
     }
 
-    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<Entity>) {
         let component_id = term.id();
         assert!(
             !access.access().has_read(component_id),
@@ -1984,7 +1984,7 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
         Term::write()
     }
 
-    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         set_contains_id(term.id())
     }
 }
@@ -2045,7 +2045,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for Vec<Q> {
             .collect()
     }
 
-    fn update_component_access(state: &Self::State, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(state: &Self::State, access: &mut FilteredAccess<Entity>) {
         for state in state {
             Q::update_component_access(state, access);
         }
@@ -2067,7 +2067,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for Vec<Q> {
 
     fn matches_component_set(
         state: &Self::State,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
+        set_contains_id: &impl Fn(Entity) -> bool,
     ) -> bool {
         state
             .iter()

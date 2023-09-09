@@ -3,11 +3,8 @@ use std::{borrow::Cow, cell::UnsafeCell, marker::PhantomData};
 use bevy_ptr::UnsafeCellDeref;
 
 use crate::{
-    archetype::ArchetypeComponentId,
-    component::{ComponentId, Tick},
-    prelude::World,
-    query::Access,
-    world::unsafe_world_cell::UnsafeWorldCell,
+    archetype::ArchetypeComponentId, component::Tick, entity::Entity, prelude::World,
+    query::Access, world::unsafe_world_cell::UnsafeWorldCell,
 };
 
 use super::{ReadOnlySystem, System};
@@ -108,7 +105,7 @@ pub struct CombinatorSystem<Func, A, B> {
     a: A,
     b: B,
     name: Cow<'static, str>,
-    component_access: Access<ComponentId>,
+    component_access: Access<Entity>,
     archetype_component_access: Access<ArchetypeComponentId>,
 }
 
@@ -145,7 +142,7 @@ where
         std::any::TypeId::of::<Self>()
     }
 
-    fn component_access(&self) -> &Access<ComponentId> {
+    fn component_access(&self) -> &Access<Entity> {
         &self.component_access
     }
 
