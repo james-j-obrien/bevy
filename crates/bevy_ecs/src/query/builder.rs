@@ -240,7 +240,7 @@ macro_rules! impl_config_tuple {
     };
 }
 
-all_tuples!(impl_config_tuple, 2, 12, F);
+all_tuples!(impl_config_tuple, 2, 15, F);
 
 #[cfg(test)]
 mod tests {

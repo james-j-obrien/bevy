@@ -2,7 +2,7 @@ use crate::render_phase::{PhaseItem, TrackedRenderPass};
 use bevy_app::App;
 use bevy_ecs::{
     entity::Entity,
-    query::{QueryState, ROQueryItem, ReadOnlyWorldQuery, WorldQuery},
+    query::{QueryState, ROQueryItem, ReadOnlyWorldQuery},
     system::{ReadOnlySystemParam, Resource, SystemParam, SystemParamItem, SystemState},
     world::World,
 };
@@ -221,7 +221,7 @@ macro_rules! render_command_tuple_impl {
     };
 }
 
-all_tuples!(render_command_tuple_impl, 0, 12, C, V, E);
+all_tuples!(render_command_tuple_impl, 0, 15, C, V, E);
 
 /// Wraps a [`RenderCommand`] into a state so that it can be used as a [`Draw`] function.
 ///

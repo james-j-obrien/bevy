@@ -1586,8 +1586,8 @@ macro_rules! impl_anytuple_fetch {
     };
 }
 
-all_tuples!(impl_tuple_fetch, 0, 12, F, S);
-all_tuples!(impl_anytuple_fetch, 0, 12, F, S);
+all_tuples!(impl_tuple_fetch, 0, 15, F, S);
+all_tuples!(impl_anytuple_fetch, 0, 15, F, S);
 
 /// [`WorldQuery`] used to nullify queries by turning `Query<Q>` into `Query<NopWorldQuery<Q>>`
 ///
