@@ -279,11 +279,11 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_dynamic() {
+    fn test_builder_ptr() {
         let mut world = World::new();
         let entity = world.spawn((A(0), B(1))).id();
-        let component_id_a = world.component_id::<A>().unwrap();
-        let component_id_b = world.component_id::<B>().unwrap();
+        let component_id_a = world.init_component::<A>();
+        let component_id_b = world.init_component::<B>();
 
         let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new(&mut world)
             .term::<1>(|t| t.set_id(component_id_a))
@@ -296,6 +296,31 @@ mod tests {
 
         let a = unsafe { a.deref::<A>() };
         let b = unsafe { b.deref::<B>() };
+
+        assert_eq!(a.0, 0);
+        assert_eq!(b.0, 1);
+    }
+
+    #[test]
+    fn test_builder_vec() {
+        let mut world = World::new();
+        let entity = world.spawn((A(0), B(1))).id();
+        let component_a = world.init_component::<A>();
+        let component_b = world.init_component::<B>();
+
+        let mut query = QueryBuilder::<(Entity, Vec<Ptr>)>::new(&mut world)
+            .config::<1, _>(|t| {
+                t.push(Term::read_id(component_a));
+                t.push(Term::read_id(component_b));
+            })
+            .build();
+
+        let (e, ptrs) = query.single(&world);
+
+        assert_eq!(e, entity);
+
+        let a = unsafe { ptrs[0].deref::<A>() };
+        let b = unsafe { ptrs[1].deref::<B>() };
 
         assert_eq!(a.0, 0);
         assert_eq!(b.0, 1);
