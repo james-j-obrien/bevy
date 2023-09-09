@@ -2,7 +2,6 @@ use crate::{
     component::ComponentId,
     prelude::{Component, World},
 };
-use bevy_derive::{Deref, DerefMut};
 use std::{
     marker::PhantomData,
     ops::{Index, IndexMut},
@@ -21,6 +20,25 @@ impl ComponentTerm {
 
     pub fn empty() -> Self {
         Self { id: None }
+    }
+}
+
+pub struct ComponentTermBuilder<'w> {
+    term: &'w mut ComponentTerm,
+    world: &'w mut World,
+}
+
+impl<'w> ComponentTermBuilder<'w> {
+    pub fn new(term: &'w mut ComponentTerm, world: &'w mut World) -> Self {
+        Self { term, world }
+    }
+
+    pub fn set<T: Component>(&mut self) {
+        self.term.id = Some(self.world.init_component::<T>())
+    }
+
+    pub fn set_id(&mut self, id: ComponentId) {
+        self.term.id = Some(id)
     }
 }
 
@@ -98,39 +116,6 @@ pub struct QueryBuilder<'w, Q: WorldQuery> {
     _marker: PhantomData<Q>,
 }
 
-#[derive(Deref, DerefMut)]
-pub struct TermBuilder<'w, Q: WorldQuery> {
-    term: Term,
-    path: Vec<usize>,
-    #[deref]
-    query: &'w mut QueryBuilder<'w, Q>,
-}
-
-impl<'w, Q: WorldQuery> Drop for TermBuilder<'w, Q> {
-    fn drop(&mut self) {
-        *self.query.term_path(&self.path) = std::mem::take(&mut self.term);
-    }
-}
-
-impl<'w, Q: WorldQuery> TermBuilder<'w, Q> {
-    pub fn new(term: Term, path: Vec<usize>, query: &'w mut QueryBuilder<'w, Q>) -> Self {
-        Self { term, path, query }
-    }
-
-    pub fn id(&mut self, id: ComponentId) -> &mut Self {
-        match &mut self.term {
-            Term::Component(term) => term.id = Some(id),
-            _ => panic!("Cannot set id on non-component term."),
-        }
-        self
-    }
-
-    pub fn set<T: Component>(&mut self) -> &mut Self {
-        let id = self.query.world.init_component::<T>();
-        self.id(id)
-    }
-}
-
 impl<'w, Q: WorldQuery> QueryBuilder<'w, Q> {
     pub fn new(world: &'w mut World) -> Self {
         let term = Q::init_state(world);
@@ -141,17 +126,12 @@ impl<'w, Q: WorldQuery> QueryBuilder<'w, Q> {
         }
     }
 
-    pub fn term(&'w mut self, index: usize) -> TermBuilder<'w, Q> {
-        let term = std::mem::replace(&mut self.term[index], Term::Entity);
-        TermBuilder::new(term, vec![index], self)
-    }
-
-    pub fn term_path(&mut self, path: &Vec<usize>) -> &mut Term {
-        let mut term = &mut self.term;
-        for &index in path {
-            term = &mut term[index];
+    pub fn term(&'w mut self, index: usize, f: impl Fn(&mut ComponentTermBuilder)) -> &mut Self {
+        match &mut self.term[index] {
+            Term::Component(term) => f(&mut ComponentTermBuilder::new(term, self.world)),
+            _ => panic!("Accessing non component term as component term."),
         }
-        term
+        self
     }
 
     pub fn build(&mut self) -> QueryState<Q> {
@@ -178,10 +158,8 @@ mod tests {
         let entity = world.spawn((A(0), B(1))).id();
 
         let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new(&mut world)
-            .term(1)
-            .set::<A>()
-            .term(2)
-            .set::<B>()
+            .term(1, |t| t.set::<A>())
+            .term(2, |t| t.set::<B>())
             .build();
 
         let (e, a, b) = query.single(&world);
@@ -203,10 +181,8 @@ mod tests {
         let component_id_b = world.component_id::<B>().unwrap();
 
         let mut query = QueryBuilder::<(Entity, Ptr, Ptr)>::new(&mut world)
-            .term(1)
-            .id(component_id_a)
-            .term(2)
-            .id(component_id_b)
+            .term(1, |t| t.set_id(component_id_a))
+            .term(2, |t| t.set_id(component_id_b))
             .build();
 
         let (e, a, b) = query.single(&world);

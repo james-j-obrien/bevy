@@ -1374,8 +1374,8 @@ macro_rules! impl_tuple_fetch {
             #[inline]
             #[allow(clippy::unused_unit)]
             unsafe fn init_fetch<'w>(_world: UnsafeWorldCell<'w>, _term: &Term, _last_run: Tick, _this_run: Tick) -> Self::Fetch<'w> {
-                let mut terms = _term.iter();
-                ($($name::init_fetch(_world, terms.next().unwrap(), _last_run, _this_run),)*)
+                let mut _terms = _term.iter();
+                ($($name::init_fetch(_world, _terms.next().unwrap(), _last_run, _this_run),)*)
             }
 
             const IS_DENSE: bool = true $(&& $name::IS_DENSE)*;
@@ -1390,15 +1390,15 @@ macro_rules! impl_tuple_fetch {
                 _table: &'w Table
             ) {
                 let ($($name,)*) = _fetch;
-                let mut terms = _term.iter();
-                $($name::set_archetype($name, terms.next().unwrap(), _archetype, _table);)*
+                let mut _terms = _term.iter();
+                $($name::set_archetype($name, _terms.next().unwrap(), _archetype, _table);)*
             }
 
             #[inline]
             unsafe fn set_table<'w>(_fetch: &mut Self::Fetch<'w>, _term: &Term, _table: &'w Table) {
                 let ($($name,)*) = _fetch;
-                let mut terms = _term.iter();
-                $($name::set_table($name, terms.next().unwrap(), _table);)*
+                let mut _terms = _term.iter();
+                $($name::set_table($name, _terms.next().unwrap(), _table);)*
             }
 
             #[inline(always)]
@@ -1423,13 +1423,13 @@ macro_rules! impl_tuple_fetch {
             }
 
             fn update_component_access(term: &Term, _access: &mut FilteredAccess<ComponentId>) {
-                let mut terms = term.iter();
-                $($name::update_component_access(terms.next().unwrap(), _access);)*
+                let mut _terms = term.iter();
+                $($name::update_component_access(_terms.next().unwrap(), _access);)*
             }
 
             fn update_archetype_component_access(term: &Term, _archetype: &Archetype, _access: &mut Access<ArchetypeComponentId>) {
-                let mut terms = term.iter();
-                $($name::update_archetype_component_access(terms.next().unwrap(), _archetype, _access);)*
+                let mut _terms = term.iter();
+                $($name::update_archetype_component_access(_terms.next().unwrap(), _archetype, _access);)*
             }
 
 
@@ -1442,8 +1442,8 @@ macro_rules! impl_tuple_fetch {
             }
 
             fn matches_component_set(term: &Term, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
-                let mut terms = term.iter();
-                true $(&& $name::matches_component_set(terms.next().unwrap(), _set_contains_id))*
+                let mut _terms = term.iter();
+                true $(&& $name::matches_component_set(_terms.next().unwrap(), _set_contains_id))*
             }
         }
 
@@ -1480,8 +1480,8 @@ macro_rules! impl_anytuple_fetch {
             #[inline]
             #[allow(clippy::unused_unit)]
             unsafe fn init_fetch<'w>(_world: UnsafeWorldCell<'w>, term: &Term, _last_run: Tick, _this_run: Tick) -> Self::Fetch<'w> {
-                let mut terms = term.iter();
-                ($(($name::init_fetch(_world, terms.next().unwrap(), _last_run, _this_run), false),)*)
+                let mut _terms = term.iter();
+                ($(($name::init_fetch(_world, _terms.next().unwrap(), _last_run, _this_run), false),)*)
             }
 
             const IS_DENSE: bool = true $(&& $name::IS_DENSE)*;
@@ -1554,9 +1554,9 @@ macro_rules! impl_anytuple_fetch {
             }
 
             fn update_archetype_component_access(term: &Term, _archetype: &Archetype, _access: &mut Access<ArchetypeComponentId>) {
-                let mut terms = term.iter();
+                let mut _terms = term.iter();
                 $(
-                    let term = terms.next().unwrap();
+                    let term = _terms.next().unwrap();
                     if $name::matches_component_set(term, &|id| _archetype.contains(id)) {
                         $name::update_archetype_component_access(term, _archetype, _access);
                     }
@@ -1572,8 +1572,8 @@ macro_rules! impl_anytuple_fetch {
             }
 
             fn matches_component_set(term: &Term, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
-                let mut terms = term.iter();
-                false $(|| $name::matches_component_set(terms.next().unwrap(), _set_contains_id))*
+                let mut _terms = term.iter();
+                false $(|| $name::matches_component_set(_terms.next().unwrap(), _set_contains_id))*
             }
         }
 
@@ -1818,7 +1818,7 @@ unsafe impl WorldQuery for Ptr<'_> {
         }
     }
 
-    fn init_state(world: &mut World) -> Term {
+    fn init_state(_world: &mut World) -> Term {
         Term::component()
     }
 
@@ -2045,7 +2045,7 @@ unsafe impl<Q: WorldQuery> WorldQuery for Vec<Q> {
         }
     }
 
-    fn init_state(world: &mut World) -> Term {
+    fn init_state(_world: &mut World) -> Term {
         Term::group(Vec::new())
     }
 

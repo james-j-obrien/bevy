@@ -269,9 +269,9 @@ macro_rules! impl_query_filter_tuple {
 
             #[inline]
             unsafe fn init_fetch<'w>(world: UnsafeWorldCell<'w>, state: &Term, last_run: Tick, this_run: Tick) -> Self::Fetch<'w> {
-                let mut terms = state.iter();
+                let mut _terms = state.iter();
                 ($(OrFetch {
-                    fetch: $filter::init_fetch(world, terms.next().unwrap(), last_run, this_run),
+                    fetch: $filter::init_fetch(world, _terms.next().unwrap(), last_run, this_run),
                     matches: false,
                 },)*)
             }
@@ -279,9 +279,9 @@ macro_rules! impl_query_filter_tuple {
             #[inline]
             unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, term: &Term, table: &'w Table) {
                 let ($($filter,)*) = fetch;
-                let mut terms = term.iter();
+                let mut _terms = term.iter();
                 $(
-                    let term = terms.next().unwrap();
+                    let term = _terms.next().unwrap();
                     $filter.matches = $filter::matches_component_set(term, &|id| table.has_column(id));
                     if $filter.matches {
                         $filter::set_table(&mut $filter.fetch, term, table);
@@ -297,9 +297,9 @@ macro_rules! impl_query_filter_tuple {
                 table: &'w Table
             ) {
                 let ($($filter,)*) = fetch;
-                let mut terms = term.iter();
+                let mut _terms = term.iter();
                 $(
-                    let term = terms.next().unwrap();
+                    let term = _terms.next().unwrap();
                     $filter.matches = $filter::matches_component_set(term, &|id| archetype.contains(id));
                     if $filter.matches {
                         $filter::set_archetype(&mut $filter.fetch, term, archetype, table);
@@ -327,11 +327,12 @@ macro_rules! impl_query_filter_tuple {
             }
 
             fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
-                let mut terms = term.iter();
+                let mut _terms = term.iter();
 
                 let mut _new_access = access.clone();
                 let mut _not_first = false;
                 $(
+                    let term = _terms.next().unwrap();
                     if _not_first {
                         let mut intermediate = access.clone();
                         $filter::update_component_access(term, &mut intermediate);
@@ -346,9 +347,9 @@ macro_rules! impl_query_filter_tuple {
                 *access = _new_access;
             }
 
-            fn update_archetype_component_access(state: &Term, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
-                let mut terms = state.iter();
-                $($filter::update_archetype_component_access(terms.next().unwrap(), archetype, access);)*
+            fn update_archetype_component_access(_term: &Term, archetype: &Archetype, access: &mut Access<ArchetypeComponentId>) {
+                let mut _terms = _term.iter();
+                $($filter::update_archetype_component_access(_terms.next().unwrap(), archetype, access);)*
             }
 
             fn init_state(world: &mut World) -> Term {
@@ -360,8 +361,8 @@ macro_rules! impl_query_filter_tuple {
             }
 
             fn matches_component_set(_term: &Term, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
-                let mut terms = _term.iter();
-                false $(|| $filter::matches_component_set(terms.next().unwrap(), _set_contains_id))*
+                let mut _terms = _term.iter();
+                false $(|| $filter::matches_component_set(_terms.next().unwrap(), _set_contains_id))*
             }
         }
 

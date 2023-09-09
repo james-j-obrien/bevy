@@ -2,7 +2,7 @@ use crate::render_phase::{PhaseItem, TrackedRenderPass};
 use bevy_app::App;
 use bevy_ecs::{
     entity::Entity,
-    query::{QueryState, ROQueryItem, ReadOnlyWorldQuery, WorldQuery},
+    query::{QueryState, ROQueryItem, ReadOnlyWorldQuery},
     system::{ReadOnlySystemParam, Resource, SystemParam, SystemParamItem, SystemState},
     world::World,
 };
