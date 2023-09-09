@@ -605,6 +605,7 @@ impl<'w> EntityWorldMut<'w> {
 
         let bundles = &mut self.world.bundles;
         let components = &mut self.world.components;
+        components.init_tag(component_id);
 
         let (bundle_info, storage_type) = bundles.init_component_info(components, component_id);
         let bundle_inserter = bundle_info.get_bundle_inserter(

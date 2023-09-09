@@ -314,6 +314,17 @@ impl ComponentDescriptor {
         }
     }
 
+    pub fn new_tag() -> Self {
+        Self {
+            name: "".into(),
+            storage_type: StorageType::Table,
+            layout: Layout::new::<()>(),
+            is_send_and_sync: true,
+            type_id: None,
+            drop: None,
+        }
+    }
+
     /// Create a new `ComponentDescriptor`.
     ///
     /// # Safety
@@ -459,6 +470,18 @@ impl Components {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.components.len() == 0
+    }
+
+    #[inline]
+    pub fn init_tag(&mut self, entity: Entity) {
+        let info = self.components.get_or_insert_with(entity, || {
+            ComponentInfo::new(entity, ComponentDescriptor::new_tag())
+        });
+        debug_assert_eq!(
+            info.layout().size(),
+            0,
+            "Sized component has been initialized as a tag."
+        );
     }
 
     /// Gets the metadata associated with the given component.
