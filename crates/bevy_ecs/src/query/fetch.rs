@@ -12,6 +12,8 @@ use bevy_ptr::{Ptr, PtrMut, ThinSlicePtr, UnsafeCellDeref};
 use bevy_utils::all_tuples;
 use std::{cell::UnsafeCell, marker::PhantomData};
 
+use super::Term;
+
 /// Types that can be fetched from a [`World`] using a [`Query`].
 ///
 /// There are many types that natively implement this trait:
@@ -326,25 +328,7 @@ pub unsafe trait WorldQuery {
     /// State used to construct a [`Self::Fetch`](crate::query::WorldQuery::Fetch). This will be cached inside [`QueryState`](crate::query::QueryState),
     /// so it is best to move as much data / computation here as possible to reduce the cost of
     /// constructing [`Self::Fetch`](crate::query::WorldQuery::Fetch).
-    type State: Send + Sync + Sized;
-
-    /// This associated type defines how a query can be configured at runtime.
-    ///
-    /// [`QueryState::new_with_config`](crate::query::state::QueryState::new_with_config) uses this
-    /// associated type to construct [`QueryState`](crate::query::state::QueryState).
-    /// When this associated type implements the `Default` trait,
-    /// [`QueryState::new`](crate::query::state::QueryState::new) can be used instead.
-    ///
-    /// In the case where no config is required, `()` is conventionally chosen
-    /// as the type for `Config`. This is the case for statically defined
-    /// queries, for types such as `&T`, since they can obtain a
-    /// [`ComponentId`] without any runtime information.
-    ///
-    /// However, for dynamic queries, the [`ComponentId`] varies at runtime and
-    /// mut be additionally provided. By supplying `Config = ComponentId` we
-    /// can vary the component requested each time we construct a new query,
-    /// even for the same underlying Rust type.
-    type Config: Default;
+    type State: Send + Sync + Sized + Clone;
 
     /// This function manually implements subtyping for the query items.
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort>;
@@ -455,7 +439,7 @@ pub unsafe trait WorldQuery {
     /// Creates and initializes a [`State`](WorldQuery::State) for this [`WorldQuery`] type.
     ///
     /// [`WorldQuery::Config`] is used to pass runtime data for dynamic queries.
-    fn init_state(config: Self::Config, world: &mut World) -> Self::State;
+    fn init_state(world: &mut World) -> Self::State;
 
     /// Returns `true` if this query matches a set of components. Otherwise, returns `false`.
     fn matches_component_set(
@@ -482,7 +466,6 @@ unsafe impl WorldQuery for Entity {
     type Item<'w> = Entity;
     type ReadOnly = Self;
     type State = ();
-    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -531,7 +514,7 @@ unsafe impl WorldQuery for Entity {
     ) {
     }
 
-    fn init_state(_config: (), _world: &mut World) {}
+    fn init_state(_world: &mut World) {}
 
     fn matches_component_set(
         _state: &Self::State,
@@ -550,7 +533,6 @@ unsafe impl WorldQuery for EntityRef<'_> {
     type Item<'w> = EntityRef<'w>;
     type ReadOnly = Self;
     type State = ();
-    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -612,7 +594,7 @@ unsafe impl WorldQuery for EntityRef<'_> {
         }
     }
 
-    fn init_state(_config: (), _world: &mut World) {}
+    fn init_state(_world: &mut World) {}
 
     fn matches_component_set(
         _state: &Self::State,
@@ -631,7 +613,6 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
     type Item<'w> = EntityMut<'w>;
     type ReadOnly = EntityRef<'a>;
     type State = ();
-    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -693,7 +674,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
         }
     }
 
-    fn init_state(_config: (), _world: &mut World) {}
+    fn init_state(_world: &mut World) {}
 
     fn matches_component_set(
         _state: &Self::State,
@@ -704,6 +685,7 @@ unsafe impl<'a> WorldQuery for EntityMut<'a> {
 }
 
 #[doc(hidden)]
+#[derive(Default)]
 pub struct ReadFetch<'w, T> {
     // T::Storage = TableStorage
     table_components: Option<ThinSlicePtr<'w, UnsafeCell<T>>>,
@@ -723,8 +705,7 @@ unsafe impl<T: Component> WorldQuery for &T {
     type Fetch<'w> = ReadFetch<'w, T>;
     type Item<'w> = &'w T;
     type ReadOnly = Self;
-    type State = ComponentId;
-    type Config = ();
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: &'wlong T) -> &'wshort T {
         item
@@ -742,7 +723,7 @@ unsafe impl<T: Component> WorldQuery for &T {
     #[inline]
     unsafe fn init_fetch<'w>(
         world: UnsafeWorldCell<'w>,
-        &component_id: &ComponentId,
+        term: &Term,
         _last_run: Tick,
         _this_run: Tick,
     ) -> ReadFetch<'w, T> {
@@ -756,7 +737,7 @@ unsafe impl<T: Component> WorldQuery for &T {
                     // reference to the sparse set, which is used to access the components in `Self::fetch`.
                     .storages()
                     .sparse_sets
-                    .get(component_id)
+                    .get(term.id())
                     .debug_checked_unwrap()
             }),
         }
@@ -765,24 +746,20 @@ unsafe impl<T: Component> WorldQuery for &T {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut ReadFetch<'w, T>,
-        component_id: &ComponentId,
+        term: &Term,
         _archetype: &'w Archetype,
         table: &'w Table,
     ) {
         if Self::IS_DENSE {
-            Self::set_table(fetch, component_id, table);
+            Self::set_table(fetch, term, table);
         }
     }
 
     #[inline]
-    unsafe fn set_table<'w>(
-        fetch: &mut ReadFetch<'w, T>,
-        &component_id: &ComponentId,
-        table: &'w Table,
-    ) {
+    unsafe fn set_table<'w>(fetch: &mut ReadFetch<'w, T>, term: &Term, table: &'w Table) {
         fetch.table_components = Some(
             table
-                .get_column(component_id)
+                .get_column(term.id())
                 .debug_checked_unwrap()
                 .get_data_slice()
                 .into(),
@@ -810,10 +787,8 @@ unsafe impl<T: Component> WorldQuery for &T {
         }
     }
 
-    fn update_component_access(
-        &component_id: &ComponentId,
-        access: &mut FilteredAccess<ComponentId>,
-    ) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+        let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
             "&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
@@ -823,24 +798,22 @@ unsafe impl<T: Component> WorldQuery for &T {
     }
 
     fn update_archetype_component_access(
-        &component_id: &ComponentId,
+        term: &Term,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if let Some(archetype_component_id) = archetype.get_archetype_component_id(component_id) {
+        if let Some(archetype_component_id) = archetype.get_archetype_component_id(term.id()) {
             access.add_read(archetype_component_id);
         }
     }
 
-    fn init_state(_config: (), world: &mut World) -> ComponentId {
-        world.init_component::<T>()
+    fn init_state(world: &mut World) -> Term {
+        let id = world.init_component::<T>();
+        Term::read_id(id)
     }
 
-    fn matches_component_set(
-        &state: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
-        set_contains_id(state)
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+        set_contains_id(term.id())
     }
 }
 
@@ -874,8 +847,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
     type Fetch<'w> = RefFetch<'w, T>;
     type Item<'w> = Ref<'w, T>;
     type ReadOnly = Self;
-    type State = ComponentId;
-    type Config = ();
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Ref<'wlong, T>) -> Ref<'wshort, T> {
         item
@@ -893,7 +865,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
     #[inline]
     unsafe fn init_fetch<'w>(
         world: UnsafeWorldCell<'w>,
-        &component_id: &ComponentId,
+        term: &Term,
         last_run: Tick,
         this_run: Tick,
     ) -> RefFetch<'w, T> {
@@ -904,7 +876,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
                     // SAFETY: See &T::init_fetch.
                     .storages()
                     .sparse_sets
-                    .get(component_id)
+                    .get(term.id())
                     .debug_checked_unwrap()
             }),
             last_run,
@@ -915,22 +887,18 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut RefFetch<'w, T>,
-        component_id: &ComponentId,
+        term: &Term,
         _archetype: &'w Archetype,
         table: &'w Table,
     ) {
         if Self::IS_DENSE {
-            Self::set_table(fetch, component_id, table);
+            Self::set_table(fetch, term, table);
         }
     }
 
     #[inline]
-    unsafe fn set_table<'w>(
-        fetch: &mut RefFetch<'w, T>,
-        &component_id: &ComponentId,
-        table: &'w Table,
-    ) {
-        let column = table.get_column(component_id).debug_checked_unwrap();
+    unsafe fn set_table<'w>(fetch: &mut RefFetch<'w, T>, term: &Term, table: &'w Table) {
+        let column = table.get_column(term.id()).debug_checked_unwrap();
         fetch.table_data = Some((
             column.get_data_slice().into(),
             column.get_added_ticks_slice().into(),
@@ -972,10 +940,8 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
         }
     }
 
-    fn update_component_access(
-        &component_id: &ComponentId,
-        access: &mut FilteredAccess<ComponentId>,
-    ) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+        let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
             "&{} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
@@ -985,24 +951,21 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
     }
 
     fn update_archetype_component_access(
-        &component_id: &ComponentId,
+        term: &Term,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if let Some(archetype_component_id) = archetype.get_archetype_component_id(component_id) {
+        if let Some(archetype_component_id) = archetype.get_archetype_component_id(term.id()) {
             access.add_read(archetype_component_id);
         }
     }
 
-    fn init_state(_config: (), world: &mut World) -> ComponentId {
-        world.init_component::<T>()
+    fn init_state(world: &mut World) -> Term {
+        Term::read_id(world.init_component::<T>())
     }
 
-    fn matches_component_set(
-        &state: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
-        set_contains_id(state)
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+        set_contains_id(term.id())
     }
 }
 
@@ -1036,8 +999,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
     type Fetch<'w> = WriteFetch<'w, T>;
     type Item<'w> = Mut<'w, T>;
     type ReadOnly = &'__w T;
-    type State = ComponentId;
-    type Config = ();
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Mut<'wlong, T>) -> Mut<'wshort, T> {
         item
@@ -1055,7 +1017,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
     #[inline]
     unsafe fn init_fetch<'w>(
         world: UnsafeWorldCell<'w>,
-        &component_id: &ComponentId,
+        term: &Term,
         last_run: Tick,
         this_run: Tick,
     ) -> WriteFetch<'w, T> {
@@ -1066,7 +1028,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
                     // SAFETY: See &T::init_fetch.
                     .storages()
                     .sparse_sets
-                    .get(component_id)
+                    .get(term.id())
                     .debug_checked_unwrap()
             }),
             last_run,
@@ -1077,22 +1039,18 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut WriteFetch<'w, T>,
-        component_id: &ComponentId,
+        term: &Term,
         _archetype: &'w Archetype,
         table: &'w Table,
     ) {
         if Self::IS_DENSE {
-            Self::set_table(fetch, component_id, table);
+            Self::set_table(fetch, term, table);
         }
     }
 
     #[inline]
-    unsafe fn set_table<'w>(
-        fetch: &mut WriteFetch<'w, T>,
-        &component_id: &ComponentId,
-        table: &'w Table,
-    ) {
-        let column = table.get_column(component_id).debug_checked_unwrap();
+    unsafe fn set_table<'w>(fetch: &mut WriteFetch<'w, T>, term: &Term, table: &'w Table) {
+        let column = table.get_column(term.id()).debug_checked_unwrap();
         fetch.table_data = Some((
             column.get_data_slice().into(),
             column.get_added_ticks_slice().into(),
@@ -1134,10 +1092,8 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
         }
     }
 
-    fn update_component_access(
-        &component_id: &ComponentId,
-        access: &mut FilteredAccess<ComponentId>,
-    ) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+        let component_id = term.id();
         assert!(
             !access.access().has_read(component_id),
             "&mut {} conflicts with a previous access in this query. Mutable component access must be unique.",
@@ -1147,24 +1103,21 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
     }
 
     fn update_archetype_component_access(
-        &component_id: &ComponentId,
+        term: &Term,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if let Some(archetype_component_id) = archetype.get_archetype_component_id(component_id) {
+        if let Some(archetype_component_id) = archetype.get_archetype_component_id(term.id()) {
             access.add_write(archetype_component_id);
         }
     }
 
-    fn init_state(_config: (), world: &mut World) -> ComponentId {
-        world.init_component::<T>()
+    fn init_state(world: &mut World) -> Term {
+        Term::write_id(world.init_component::<T>())
     }
 
-    fn matches_component_set(
-        &state: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
-        set_contains_id(state)
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+        set_contains_id(term.id())
     }
 }
 
@@ -1189,7 +1142,6 @@ unsafe impl<T: WorldQuery> WorldQuery for Option<T> {
     type Item<'w> = Option<T::Item<'w>>;
     type ReadOnly = Option<T::ReadOnly>;
     type State = T::State;
-    type Config = T::Config;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item.map(T::shrink)
@@ -1264,8 +1216,8 @@ unsafe impl<T: WorldQuery> WorldQuery for Option<T> {
         }
     }
 
-    fn init_state(config: Self::Config, world: &mut World) -> T::State {
-        T::init_state(config, world)
+    fn init_state(world: &mut World) -> T::State {
+        T::init_state(world)
     }
 
     fn matches_component_set(
@@ -1339,8 +1291,7 @@ unsafe impl<T: Component> WorldQuery for Has<T> {
     type Fetch<'w> = bool;
     type Item<'w> = bool;
     type ReadOnly = Self;
-    type State = ComponentId;
-    type Config = ();
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
         item
@@ -1368,16 +1319,16 @@ unsafe impl<T: Component> WorldQuery for Has<T> {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut Self::Fetch<'w>,
-        state: &Self::State,
+        term: &Term,
         archetype: &'w Archetype,
         _table: &Table,
     ) {
-        *fetch = archetype.contains(*state);
+        *fetch = archetype.contains(term.id());
     }
 
     #[inline]
-    unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, state: &Self::State, table: &'w Table) {
-        *fetch = table.has_column(*state);
+    unsafe fn set_table<'w>(fetch: &mut Self::Fetch<'w>, term: &Term, table: &'w Table) {
+        *fetch = table.has_column(term.id());
     }
 
     #[inline(always)]
@@ -1400,8 +1351,8 @@ unsafe impl<T: Component> WorldQuery for Has<T> {
     ) {
     }
 
-    fn init_state(_config: (), world: &mut World) -> ComponentId {
-        world.init_component::<T>()
+    fn init_state(world: &mut World) -> Term {
+        Term::none_id(world.init_component::<T>())
     }
 
     fn matches_component_set(
@@ -1427,7 +1378,6 @@ macro_rules! impl_tuple_fetch {
             type Item<'w> = ($($name::Item<'w>,)*);
             type ReadOnly = ($($name::ReadOnly,)*);
             type State = ($($name::State,)*);
-            type Config = ($($name::Config,)*);
 
             fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
                 let ($($name,)*) = item;
@@ -1498,9 +1448,8 @@ macro_rules! impl_tuple_fetch {
             }
 
 
-            fn init_state(config: Self::Config, _world: &mut World) -> Self::State {
-                let ($($state,)*) = config;
-                ($($name::init_state($state, _world),)*)
+            fn init_state(_world: &mut World) -> Self::State {
+                ($($name::init_state(_world),)*)
             }
 
             fn matches_component_set(state: &Self::State, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
@@ -1532,7 +1481,6 @@ macro_rules! impl_anytuple_fetch {
             type Item<'w> = ($(Option<$name::Item<'w>>,)*);
             type ReadOnly = AnyOf<($($name::ReadOnly,)*)>;
             type State = ($($name::State,)*);
-            type Config = ($($name::Config,)*);
 
             fn shrink<'wlong: 'wshort, 'wshort>(item: Self::Item<'wlong>) -> Self::Item<'wshort> {
                 let ($($name,)*) = item;
@@ -1623,9 +1571,8 @@ macro_rules! impl_anytuple_fetch {
                 )*
             }
 
-            fn init_state(config: Self::Config, _world: &mut World) -> Self::State {
-                let ($($state,)*) = config;
-                ($($name::init_state($state, _world),)*)
+            fn init_state(_world: &mut World) -> Self::State {
+                ($($name::init_state(_world),)*)
             }
 
             fn matches_component_set(_state: &Self::State, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
@@ -1653,7 +1600,6 @@ unsafe impl<Q: WorldQuery> WorldQuery for NopWorldQuery<Q> {
     type Item<'w> = ();
     type ReadOnly = Self;
     type State = Q::State;
-    type Config = Q::Config;
 
     fn shrink<'wlong: 'wshort, 'wshort>(_: ()) {}
 
@@ -1699,8 +1645,8 @@ unsafe impl<Q: WorldQuery> WorldQuery for NopWorldQuery<Q> {
     ) {
     }
 
-    fn init_state(config: Self::Config, world: &mut World) -> Self::State {
-        Q::init_state(config, world)
+    fn init_state(world: &mut World) -> Self::State {
+        Q::init_state(world)
     }
 
     fn matches_component_set(
@@ -1720,7 +1666,6 @@ unsafe impl<T: ?Sized> WorldQuery for PhantomData<T> {
     type Fetch<'a> = ();
     type ReadOnly = Self;
     type State = ();
-    type Config = ();
 
     fn shrink<'wlong: 'wshort, 'wshort>(_item: Self::Item<'wlong>) -> Self::Item<'wshort> {}
 
@@ -1765,7 +1710,7 @@ unsafe impl<T: ?Sized> WorldQuery for PhantomData<T> {
     ) {
     }
 
-    fn init_state(_config: Self::Config, _world: &mut World) -> Self::State {}
+    fn init_state(_world: &mut World) -> Self::State {}
 
     fn matches_component_set(
         _state: &Self::State,
@@ -1794,8 +1739,7 @@ unsafe impl WorldQuery for Ptr<'_> {
     type Fetch<'w> = ReadFetchUntyped<'w>;
     type Item<'w> = Ptr<'w>;
     type ReadOnly = Self;
-    type State = ComponentId;
-    type Config = ComponentId;
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: Ptr<'wlong>) -> Ptr<'wshort> {
         item
@@ -1806,10 +1750,11 @@ unsafe impl WorldQuery for Ptr<'_> {
 
     unsafe fn init_fetch<'w>(
         world: UnsafeWorldCell<'w>,
-        &component_id: &ComponentId,
+        term: &Term,
         _last_run: Tick,
         _this_run: Tick,
     ) -> ReadFetchUntyped<'w> {
+        let component_id = term.id();
         // SAFETY: `init_state` checks that the component exists
         let info = world.components().get_info_unchecked(component_id);
         ReadFetchUntyped {
@@ -1829,24 +1774,20 @@ unsafe impl WorldQuery for Ptr<'_> {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut ReadFetchUntyped<'w>,
-        component_id: &ComponentId,
+        term: &Term,
         _archetype: &'w Archetype,
         table: &'w Table,
     ) {
         if let StorageType::Table = fetch.storage_type {
-            Self::set_table(fetch, component_id, table);
+            Self::set_table(fetch, term, table);
         }
     }
 
     #[inline]
-    unsafe fn set_table<'w>(
-        fetch: &mut ReadFetchUntyped<'w>,
-        &component_id: &ComponentId,
-        table: &'w Table,
-    ) {
+    unsafe fn set_table<'w>(fetch: &mut ReadFetchUntyped<'w>, term: &Term, table: &'w Table) {
         fetch.table_components = Some(
             table
-                .get_column(component_id)
+                .get_column(term.id())
                 .debug_checked_unwrap()
                 .get_data_ptr(),
         );
@@ -1871,10 +1812,8 @@ unsafe impl WorldQuery for Ptr<'_> {
         }
     }
 
-    fn update_component_access(
-        &component_id: &ComponentId,
-        access: &mut FilteredAccess<ComponentId>,
-    ) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+        let component_id = term.id();
         assert!(
             !access.access().has_write(component_id),
             "Ptr of {:?} conflicts with a previous access in this query. Shared access cannot coincide with exclusive access.",
@@ -1884,25 +1823,21 @@ unsafe impl WorldQuery for Ptr<'_> {
     }
 
     fn update_archetype_component_access(
-        &component_id: &ComponentId,
+        term: &Term,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if let Some(archetype_component_id) = archetype.get_archetype_component_id(component_id) {
+        if let Some(archetype_component_id) = archetype.get_archetype_component_id(term.id()) {
             access.add_read(archetype_component_id);
         }
     }
 
-    fn init_state(component_id: Self::Config, world: &mut World) -> ComponentId {
-        world.components().get_info(component_id).unwrap();
-        component_id
+    fn init_state(_world: &mut World) -> Term {
+        Term::read()
     }
 
-    fn matches_component_set(
-        &state: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
-        set_contains_id(state)
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+        set_contains_id(term.id())
     }
 }
 
@@ -1932,8 +1867,7 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
     type Fetch<'w> = WriteFetchUntyped<'w>;
     type Item<'w> = MutUntyped<'w>;
     type ReadOnly = Ptr<'__w>;
-    type State = ComponentId;
-    type Config = ComponentId;
+    type State = Term;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: MutUntyped<'wlong>) -> MutUntyped<'wshort> {
         item
@@ -1945,10 +1879,11 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
 
     unsafe fn init_fetch<'w>(
         world: UnsafeWorldCell<'w>,
-        &component_id: &ComponentId,
+        term: &Term,
         last_run: Tick,
         this_run: Tick,
     ) -> WriteFetchUntyped<'w> {
+        let component_id = term.id();
         // SAFETY: `init_state` checks that the component exists
         let info = world.components().get_info_unchecked(component_id);
         WriteFetchUntyped {
@@ -1970,22 +1905,18 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
     #[inline]
     unsafe fn set_archetype<'w>(
         fetch: &mut WriteFetchUntyped<'w>,
-        component_id: &ComponentId,
+        term: &Term,
         _archetype: &'w Archetype,
         table: &'w Table,
     ) {
         if let StorageType::Table = fetch.storage_type {
-            Self::set_table(fetch, component_id, table);
+            Self::set_table(fetch, term, table);
         }
     }
 
     #[inline]
-    unsafe fn set_table<'w>(
-        fetch: &mut WriteFetchUntyped<'w>,
-        &component_id: &ComponentId,
-        table: &'w Table,
-    ) {
-        let column = table.get_column(component_id).debug_checked_unwrap();
+    unsafe fn set_table<'w>(fetch: &mut WriteFetchUntyped<'w>, term: &Term, table: &'w Table) {
+        let column = table.get_column(term.id()).debug_checked_unwrap();
         fetch.table_data = Some((
             column.get_data_ptr(),
             column.get_added_ticks_slice().into(),
@@ -2029,10 +1960,8 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
         }
     }
 
-    fn update_component_access(
-        &component_id: &ComponentId,
-        access: &mut FilteredAccess<ComponentId>,
-    ) {
+    fn update_component_access(term: &Term, access: &mut FilteredAccess<ComponentId>) {
+        let component_id = term.id();
         assert!(
             !access.access().has_read(component_id),
             "PtrMut of {:?} conflicts with a previous access in this query. Mutable component access must be unique.",
@@ -2042,25 +1971,21 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
     }
 
     fn update_archetype_component_access(
-        &component_id: &ComponentId,
+        term: &Term,
         archetype: &Archetype,
         access: &mut Access<ArchetypeComponentId>,
     ) {
-        if let Some(archetype_component_id) = archetype.get_archetype_component_id(component_id) {
+        if let Some(archetype_component_id) = archetype.get_archetype_component_id(term.id()) {
             access.add_write(archetype_component_id);
         }
     }
 
-    fn init_state(component_id: Self::Config, world: &mut World) -> ComponentId {
-        world.components().get_info(component_id).unwrap();
-        component_id
+    fn init_state(_world: &mut World) -> Term {
+        Term::write()
     }
 
-    fn matches_component_set(
-        &state: &ComponentId,
-        set_contains_id: &impl Fn(ComponentId) -> bool,
-    ) -> bool {
-        set_contains_id(state)
+    fn matches_component_set(term: &Term, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+        set_contains_id(term.id())
     }
 }
 
@@ -2072,7 +1997,6 @@ unsafe impl<Q: WorldQuery> WorldQuery for Vec<Q> {
     type Item<'w> = Vec<Q::Item<'w>>;
     type ReadOnly = Vec<Q::ReadOnly>;
     type State = Vec<Q::State>;
-    type Config = Vec<Q::Config>;
 
     fn shrink<'wlong: 'wshort, 'wshort>(item: QueryItem<'wlong, Self>) -> QueryItem<'wshort, Self> {
         item.into_iter().map(Q::shrink).collect()
@@ -2137,11 +2061,8 @@ unsafe impl<Q: WorldQuery> WorldQuery for Vec<Q> {
         }
     }
 
-    fn init_state(config: Self::Config, world: &mut World) -> Self::State {
-        config
-            .into_iter()
-            .map(|config| Q::init_state(config, world))
-            .collect()
+    fn init_state(_world: &mut World) -> Self::State {
+        Vec::new()
     }
 
     fn matches_component_set(

@@ -15,7 +15,7 @@ use bevy_utils::tracing::Instrument;
 use fixedbitset::FixedBitSet;
 use std::{borrow::Borrow, fmt, mem::MaybeUninit};
 
-use super::{NopWorldQuery, QueryManyIter, ROQueryItem, ReadOnlyWorldQuery};
+use super::{NopWorldQuery, QueryManyIter, ROQueryItem, ReadOnlyWorldQuery, Term};
 
 /// Provides scoped access to a [`World`] state according to a given [`WorldQuery`] and query filter.
 #[repr(C)]
@@ -35,6 +35,7 @@ pub struct QueryState<Q: WorldQuery, F: ReadOnlyWorldQuery = ()> {
     pub(crate) matched_archetype_ids: Vec<ArchetypeId>,
     pub(crate) fetch_state: Q::State,
     pub(crate) filter_state: F::State,
+    pub(crate) terms: Vec<Term>,
 }
 
 impl<Q: WorldQuery, F: ReadOnlyWorldQuery> std::fmt::Debug for QueryState<Q, F> {
@@ -94,20 +95,18 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
 impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     /// Creates a new [`QueryState`] from a given [`World`] and inherits the result of `world.id()`.
     pub fn new(world: &mut World) -> Self {
-        let fetch_config = Default::default();
-        let filter_config = Default::default();
-        QueryState::new_with_config(world, fetch_config, filter_config)
+        let fetch_state = Q::init_state(world);
+        let filter_state = F::init_state(world);
+        QueryState::new_with_state(world, fetch_state, filter_state, Vec::new())
     }
 
     /// Creates a new [`QueryState`] from a given [`World`], config, and inherits the result of `world.id()`.
-    pub fn new_with_config(
+    pub fn new_with_state(
         world: &mut World,
-        fetch_config: <Q as WorldQuery>::Config,
-        filter_config: <F as WorldQuery>::Config,
+        fetch_state: <Q as WorldQuery>::State,
+        filter_state: <F as WorldQuery>::State,
+        terms: Vec<Term>,
     ) -> Self {
-        let fetch_state = Q::init_state(fetch_config, world);
-        let filter_state = F::init_state(filter_config, world);
-
         let mut component_access = FilteredAccess::default();
         Q::update_component_access(&fetch_state, &mut component_access);
 
@@ -132,6 +131,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
             matched_tables: Default::default(),
             matched_archetypes: Default::default(),
             archetype_component_access: Default::default(),
+            terms,
         };
         state.update_archetypes(world);
         state
@@ -244,6 +244,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     pub fn new_archetype(&mut self, archetype: &Archetype) {
         if Q::matches_component_set(&self.fetch_state, &|id| archetype.contains(id))
             && F::matches_component_set(&self.filter_state, &|id| archetype.contains(id))
+            && Term::matches_component_set(&self.terms, &|id| archetype.contains(id))
         {
             Q::update_archetype_component_access(
                 &self.fetch_state,

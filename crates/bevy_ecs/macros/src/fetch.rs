@@ -255,7 +255,6 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                 type Fetch<'__w> = #fetch_struct_name #user_ty_generics_with_world;
                 type ReadOnly = #read_only_struct_name #user_ty_generics;
                 type State = #state_struct_name #user_ty_generics;
-                type Config = ();
 
                 fn shrink<'__wlong: '__wshort, '__wshort>(
                     item: <#struct_name #user_ty_generics as #path::query::WorldQuery>::Item<'__wlong>
@@ -347,11 +346,9 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
                     )*
                 }
 
-                fn init_state(_config: Self::Config, world: &mut #path::world::World) -> #state_struct_name #user_ty_generics {
+                fn init_state(world: &mut #path::world::World) -> #state_struct_name #user_ty_generics {
                     #state_struct_name {
-                        // TODO: instead of using `Default::default` for the config (and thus failing to compile on query types needing configuration like `Ptr<'_>`)
-                        // we could have a tuple with configuration for each field, or generate a mirror struct with the same field names but storing the configuration values
-                        #(#named_field_idents: <#field_types>::init_state(Default::default(), world),)*
+                        #(#named_field_idents: <#field_types>::init_state(world),)*
                     }
                 }
 
@@ -424,6 +421,14 @@ pub fn derive_world_query_impl(input: TokenStream) -> TokenStream {
             #[automatically_derived]
             #visibility struct #state_struct_name #user_impl_generics #user_where_clauses {
                 #(#named_field_idents: <#field_types as #path::query::WorldQuery>::State,)*
+            }
+
+            impl #user_impl_generics Clone for #state_struct_name #user_ty_generics #user_where_clauses {
+                fn clone(&self) -> Self {
+                    Self {
+                        #(#named_field_idents: self.#named_field_idents.clone(),)*
+                    }
+                }
             }
 
             #mutable_impl
