@@ -8,14 +8,6 @@ use crate::{
 };
 
 #[derive(Default, Clone)]
-pub enum TermAccess {
-    #[default]
-    None,
-    Read,
-    Write,
-}
-
-#[derive(Default, Clone)]
 pub enum TermOperator {
     #[default]
     With,
@@ -26,54 +18,27 @@ pub enum TermOperator {
 #[derive(Default, Clone)]
 pub struct Term {
     id: Option<Entity>,
-    pub access: TermAccess,
-    pub oper: TermOperator,
+    oper: TermOperator,
 }
 
 impl Term {
+    pub fn with() -> Self {
+        Self {
+            id: None,
+            oper: TermOperator::With,
+        }
+    }
+
     pub fn none_id(id: Entity) -> Self {
         Self {
             id: Some(id),
-            access: TermAccess::None,
             oper: TermOperator::Any,
-        }
-    }
-    pub fn read_id(id: Entity) -> Self {
-        Self {
-            id: Some(id),
-            access: TermAccess::Read,
-            oper: TermOperator::With,
-        }
-    }
-
-    pub fn read() -> Self {
-        Self {
-            id: None,
-            access: TermAccess::Read,
-            oper: TermOperator::With,
-        }
-    }
-
-    pub fn write_id(id: Entity) -> Self {
-        Self {
-            id: Some(id),
-            access: TermAccess::Write,
-            oper: TermOperator::With,
-        }
-    }
-
-    pub fn write() -> Self {
-        Self {
-            id: None,
-            access: TermAccess::Write,
-            oper: TermOperator::With,
         }
     }
 
     pub fn with_id(id: Entity) -> Self {
         Self {
             id: Some(id),
-            access: TermAccess::None,
             oper: TermOperator::With,
         }
     }
@@ -81,7 +46,6 @@ impl Term {
     pub fn without_id(id: Entity) -> Self {
         Self {
             id: Some(id),
-            access: TermAccess::None,
             oper: TermOperator::Without,
         }
     }
@@ -258,7 +222,7 @@ mod tests {
     struct C(usize);
 
     #[test]
-    fn test_builder_static() {
+    fn test_builder_ptr_static() {
         let mut world = World::new();
         let entity = world.spawn((A(0), B(1))).id();
 
@@ -279,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_ptr() {
+    fn test_builder_ptr_dynamic() {
         let mut world = World::new();
         let entity = world.spawn((A(0), B(1))).id();
         let component_id_a = world.init_component::<A>();
@@ -310,8 +274,8 @@ mod tests {
 
         let mut query = QueryBuilder::<(Entity, Vec<Ptr>)>::new(&mut world)
             .config::<1, _>(|t| {
-                t.push(Term::read_id(component_a));
-                t.push(Term::read_id(component_b));
+                t.push(Term::with_id(component_a));
+                t.push(Term::with_id(component_b));
             })
             .build();
 

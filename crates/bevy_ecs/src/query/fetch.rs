@@ -809,7 +809,7 @@ unsafe impl<T: Component> WorldQuery for &T {
 
     fn init_state(world: &mut World) -> Term {
         let id = world.init_component::<T>();
-        Term::read_id(id)
+        Term::with_id(id)
     }
 
     fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
@@ -961,7 +961,7 @@ unsafe impl<'__w, T: Component> WorldQuery for Ref<'__w, T> {
     }
 
     fn init_state(world: &mut World) -> Term {
-        Term::read_id(world.init_component::<T>())
+        Term::with_id(world.init_component::<T>())
     }
 
     fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
@@ -1113,7 +1113,7 @@ unsafe impl<'__w, T: Component> WorldQuery for &'__w mut T {
     }
 
     fn init_state(world: &mut World) -> Term {
-        Term::write_id(world.init_component::<T>())
+        Term::with_id(world.init_component::<T>())
     }
 
     fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
@@ -1833,7 +1833,7 @@ unsafe impl WorldQuery for Ptr<'_> {
     }
 
     fn init_state(_world: &mut World) -> Term {
-        Term::read()
+        Term::with()
     }
 
     fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
@@ -1981,7 +1981,7 @@ unsafe impl<'__w> WorldQuery for PtrMut<'__w> {
     }
 
     fn init_state(_world: &mut World) -> Term {
-        Term::write()
+        Term::with()
     }
 
     fn matches_component_set(term: &Term, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
