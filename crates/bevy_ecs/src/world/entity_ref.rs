@@ -600,6 +600,42 @@ impl<'w> EntityWorldMut<'w> {
     ///
     /// You should prefer to use the typed API [`EntityWorldMut::insert`] where possible.
     ///
+    pub fn insert_id(&mut self, component_id: Entity) -> &mut Self {
+        let change_tick = self.world.change_tick();
+
+        let bundles = &mut self.world.bundles;
+        let components = &mut self.world.components;
+        components.init_tag(component_id);
+
+        let (bundle_info, storage_type) = bundles.init_component_info(components, component_id);
+        let bundle_inserter = bundle_info.get_bundle_inserter(
+            &mut self.world.entities,
+            &mut self.world.archetypes,
+            &self.world.components,
+            &mut self.world.storages,
+            self.location.archetype_id,
+            change_tick,
+        );
+
+        OwningPtr::make((), |component| unsafe {
+            self.location = insert_dynamic_bundle(
+                bundle_inserter,
+                self.entity,
+                self.location,
+                Some(component).into_iter(),
+                Some(storage_type).into_iter(),
+            );
+        });
+
+        self
+    }
+
+    /// Inserts a dynamic [`Component`] into the entity.
+    ///
+    /// This will overwrite any previous value(s) of the same component type.
+    ///
+    /// You should prefer to use the typed API [`EntityWorldMut::insert`] where possible.
+    ///
     /// # Safety
     ///
     /// - [`ComponentId`] must be from the same world as [`EntityWorldMut`]
