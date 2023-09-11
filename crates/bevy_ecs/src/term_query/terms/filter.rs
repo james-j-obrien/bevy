@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{ComponentId, Tick},
+    component::Tick,
     entity::Entity,
     prelude::{Or, World},
     query::{Access, FilteredAccess},
@@ -74,7 +74,7 @@ impl Fetchable for OrTerm {
         self.fetch(state, entity, table_row)
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<Entity>) {
         let mut iter = self.terms.iter();
         let Some(term) = iter.next() else {
             return
@@ -100,7 +100,7 @@ impl Fetchable for OrTerm {
             .for_each(|term| term.update_archetype_component_access(archetype, access))
     }
 
-    fn matches_component_set(&self, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(&self, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         self.terms
             .iter()
             .any(|term| term.matches_component_set(set_contains_id))

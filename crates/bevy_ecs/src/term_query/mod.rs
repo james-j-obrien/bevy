@@ -231,4 +231,15 @@ mod tests {
         unsafe { system.state_mut().0 = query.transmute() };
         system.run((), &mut world);
     }
+
+    // #[test]
+    // fn builder_entity_components() {
+    //     let mut world = World::new();
+    //     let component = world.spawn_empty().id();
+    //     let entity = world.spawn_empty().insert_id(component).id();
+    //     let mut query = QueryBuilder::<Entity>::new(&mut world)
+    //         .with_id(component)
+    //         .build();
+    //     assert_eq!(entity, query.single(&world));
+    // }
 }

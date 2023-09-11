@@ -1,6 +1,6 @@
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{ComponentId, Tick},
+    component::Tick,
     entity::Entity,
     prelude::{EntityMut, EntityRef, World},
     query::{Access, DebugCheckedUnwrap, FilteredAccess},
@@ -77,7 +77,7 @@ impl Fetchable for EntityTerm {
         true
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<Entity>) {
         debug_assert!(
             self.access.is_none() || !access.access().has_any_write(),
             "EntityTerm has conflicts with a previous access in this query. Exclusive access cannot coincide with any other accesses.",
@@ -107,7 +107,7 @@ impl Fetchable for EntityTerm {
         }
     }
 
-    fn matches_component_set(&self, _set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(&self, _set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         true
     }
 }

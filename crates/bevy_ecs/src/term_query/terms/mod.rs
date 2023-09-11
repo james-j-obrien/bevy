@@ -2,7 +2,7 @@ use bevy_utils::all_tuples;
 
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
-    component::{ComponentId, Tick},
+    component::Tick,
     entity::Entity,
     prelude::World,
     query::{Access, FilteredAccess},
@@ -70,7 +70,7 @@ pub trait Fetchable {
         table_row: TableRow,
     ) -> bool;
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>);
+    fn update_component_access(&self, access: &mut FilteredAccess<Entity>);
 
     fn update_archetype_component_access(
         &self,
@@ -78,7 +78,7 @@ pub trait Fetchable {
         access: &mut Access<ArchetypeComponentId>,
     );
 
-    fn matches_component_set(&self, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool;
+    fn matches_component_set(&self, set_contains_id: &impl Fn(Entity) -> bool) -> bool;
 }
 
 impl Fetchable for Term {
@@ -147,7 +147,7 @@ impl Fetchable for Term {
         }
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<Entity>) {
         match self {
             Term::Entity(term) => term.update_component_access(access),
             Term::Component(term) => term.update_component_access(access),
@@ -167,7 +167,7 @@ impl Fetchable for Term {
         }
     }
 
-    fn matches_component_set(&self, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(&self, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         match self {
             Term::Entity(term) => term.matches_component_set(set_contains_id),
             Term::Component(term) => term.matches_component_set(set_contains_id),

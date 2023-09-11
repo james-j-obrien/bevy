@@ -5,7 +5,7 @@ use bevy_ptr::{Ptr, PtrMut, UnsafeCellDeref};
 use crate::{
     archetype::{Archetype, ArchetypeComponentId},
     change_detection::{Mut, TicksMut},
-    component::{ComponentId, Tick, TickCells},
+    component::{Tick, TickCells},
     entity::Entity,
     prelude::{Component, Has, With, Without, World},
     query::{Access, DebugCheckedUnwrap, FilteredAccess},
@@ -23,14 +23,14 @@ pub enum TermOperator {
 
 #[derive(Clone)]
 pub struct ComponentTerm {
-    component: Option<ComponentId>,
+    component: Option<Entity>,
     access: Option<TermAccess>,
     operator: TermOperator,
     change_detection: bool,
 }
 
 impl ComponentTerm {
-    pub fn with(id: ComponentId) -> Self {
+    pub fn with(id: Entity) -> Self {
         Self {
             component: Some(id),
             access: None,
@@ -39,7 +39,7 @@ impl ComponentTerm {
         }
     }
 
-    pub fn without(id: ComponentId) -> Self {
+    pub fn without(id: Entity) -> Self {
         Self {
             component: Some(id),
             access: None,
@@ -57,7 +57,7 @@ impl ComponentTerm {
         }
     }
 
-    pub fn read_id(id: ComponentId) -> Self {
+    pub fn read_id(id: Entity) -> Self {
         Self {
             component: Some(id),
             access: Some(TermAccess::Read),
@@ -75,7 +75,7 @@ impl ComponentTerm {
         }
     }
 
-    pub fn write_id(id: ComponentId) -> Self {
+    pub fn write_id(id: Entity) -> Self {
         Self {
             component: Some(id),
             access: Some(TermAccess::Write),
@@ -84,11 +84,11 @@ impl ComponentTerm {
         }
     }
 
-    pub fn id(&self) -> ComponentId {
+    pub fn id(&self) -> Entity {
         self.component.unwrap()
     }
 
-    pub fn set_id(&mut self, id: ComponentId) {
+    pub fn set_id(&mut self, id: Entity) {
         self.component = Some(id);
     }
 }
@@ -202,7 +202,7 @@ impl Fetchable for ComponentTerm {
         state.pointer.is_some()
     }
 
-    fn update_component_access(&self, access: &mut FilteredAccess<ComponentId>) {
+    fn update_component_access(&self, access: &mut FilteredAccess<Entity>) {
         let id = self.id();
         debug_assert!(
             self.access.is_none() || !access.access().has_write(id),
@@ -231,7 +231,7 @@ impl Fetchable for ComponentTerm {
         }
     }
 
-    fn matches_component_set(&self, set_contains_id: &impl Fn(ComponentId) -> bool) -> bool {
+    fn matches_component_set(&self, set_contains_id: &impl Fn(Entity) -> bool) -> bool {
         match self.operator {
             TermOperator::With => set_contains_id(self.id()),
             TermOperator::Without => !set_contains_id(self.id()),

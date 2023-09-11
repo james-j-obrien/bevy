@@ -1574,7 +1574,7 @@ impl ScheduleGraph {
     /// convert conflics to human readable format
     pub fn conflicts_to_string<'a>(
         &'a self,
-        ambiguities: &'a [(NodeId, NodeId, Vec<ComponentId>)],
+        ambiguities: &'a [(NodeId, NodeId, Vec<Entity>)],
         components: &'a Components,
     ) -> impl Iterator<Item = (String, String, Vec<&str>)> + 'a {
         ambiguities
