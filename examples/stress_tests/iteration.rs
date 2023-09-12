@@ -28,7 +28,7 @@ fn main() {
     let mut query = world.term_query::<(&Velocity, &mut Position)>();
 
     let mut total = 0.0;
-    for _ in 0..100 {
+    for _ in 0..1000 {
         for (velocity, mut position) in query.iter_mut(&mut world) {
             position.0 += black_box(velocity.0);
             total += black_box(position.0.x)

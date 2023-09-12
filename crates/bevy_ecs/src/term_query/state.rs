@@ -1,4 +1,7 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    mem::{ManuallyDrop, MaybeUninit},
+};
 
 use fixedbitset::FixedBitSet;
 
@@ -17,7 +20,7 @@ use super::{
 };
 use smallvec::SmallVec;
 
-pub type TermVec<T> = SmallVec<[T; 12]>;
+pub type TermVec<T> = Vec<T>;
 
 pub struct TermQueryState<Q: QueryTermGroup = (), F: QueryTermGroup = ()> {
     world_id: WorldId,
@@ -560,13 +563,16 @@ impl<Q: QueryTermGroup, F: QueryTermGroup> TermQueryState<Q, F> {
         let len = self.terms.len();
         let terms = &self.terms[..len];
         let state = &state[..len];
-        let mut result = TermVec::with_capacity(len);
+        let mut result = TermVec::<FetchedTerm>::with_capacity(len);
+        let result_raw = result.spare_capacity_mut();
 
         for i in 0..len {
             let term = &terms[i];
             let state = &state[i];
-            result.push(term.fetch(state, entity, table_row));
+            result_raw[i].write(term.fetch(state, entity, table_row));
         }
+
+        unsafe { result.set_len(len) };
 
         result
     }
