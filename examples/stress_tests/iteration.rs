@@ -27,13 +27,12 @@ fn main() {
 
     let mut query = world.term_query::<(&Velocity, &mut Position)>();
 
-    for (velocity, mut position) in query.iter_mut(&mut world) {
-        position.0 += velocity.0;
-    }
-
     let mut total = 0.0;
-    for (velocity, position) in query.iter(&mut world) {
-        total += velocity.0.x + position.0.x;
+    for _ in 0..100 {
+        for (velocity, mut position) in query.iter_mut(&mut world) {
+            position.0 += black_box(velocity.0);
+            total += black_box(position.0.x)
+        }
     }
 
     dbg!(total);
