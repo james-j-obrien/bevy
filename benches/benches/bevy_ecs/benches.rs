@@ -3,6 +3,7 @@ use criterion::criterion_main;
 mod components;
 mod events;
 mod iteration;
+mod query;
 mod scheduling;
 mod world;
 

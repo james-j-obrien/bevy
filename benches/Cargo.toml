@@ -22,6 +22,9 @@ bevy_math = { path = "../crates/bevy_math" }
 opt-level = 3
 lto = true
 
+[profile.bench]
+debug = true
+
 [[bench]]
 name = "change_detection"
 path = "benches/bevy_ecs/change_detection.rs"
@@ -30,6 +33,11 @@ harness = false
 [[bench]]
 name = "ecs"
 path = "benches/bevy_ecs/benches.rs"
+harness = false
+
+[[bench]]
+name = "query"
+path = "benches/bevy_ecs/query.rs"
 harness = false
 
 [[bench]]
