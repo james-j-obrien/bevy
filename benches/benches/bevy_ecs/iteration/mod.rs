@@ -9,24 +9,24 @@ mod iter_frag_foreach_wide_sparse;
 mod iter_frag_sparse;
 mod iter_frag_wide;
 mod iter_frag_wide_sparse;
-mod iter_simple;
-mod iter_simple_foreach;
-mod iter_simple_foreach_sparse_set;
-mod iter_simple_foreach_wide;
-mod iter_simple_foreach_wide_sparse_set;
-mod iter_simple_sparse_set;
-mod iter_simple_system;
-mod iter_simple_wide;
-mod iter_simple_wide_sparse_set;
+pub mod iter_simple;
+pub mod iter_simple_foreach;
+pub mod iter_simple_foreach_sparse_set;
+pub mod iter_simple_foreach_wide;
+pub mod iter_simple_foreach_wide_sparse_set;
+pub mod iter_simple_sparse_set;
+pub mod iter_simple_system;
+pub mod iter_simple_wide;
+pub mod iter_simple_wide_sparse_set;
 
-use heavy_compute::*;
+// use heavy_compute::*;
 
 criterion_group!(
     iterations_benches,
     iter_frag,
     iter_frag_sparse,
     iter_simple,
-    heavy_compute,
+    // heavy_compute,
 );
 
 fn iter_simple(c: &mut Criterion) {
