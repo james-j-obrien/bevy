@@ -24,7 +24,7 @@ pub unsafe trait ObserverSystemParam: SystemParam {}
 
 /// # Safety: `Query` can make no structural changes
 unsafe impl<'w, D: QueryData + 'static, F: QueryFilter + 'static> ObserverSystemParam
-    for Query<'w, 'w, D, F>
+    for Query<'w, D, F>
 {
 }
 

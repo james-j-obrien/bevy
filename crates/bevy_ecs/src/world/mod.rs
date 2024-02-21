@@ -33,11 +33,11 @@ use crate::{
     removal_detection::RemovedComponentEvents,
     schedule::{Schedule, ScheduleLabel, Schedules},
     storage::{ResourceData, Storages},
-    system::{CommandQueue, Commands, Res, Resource},
+    system::{CommandQueue, Commands, Query, Res, Resource},
     world::error::TryRunScheduleError,
 };
 use bevy_ptr::{OwningPtr, Ptr};
-use bevy_utils::tracing::warn;
+use bevy_utils::{tracing::warn, HashMap};
 use std::{
     any::TypeId,
     fmt,
@@ -77,6 +77,7 @@ pub struct World {
     pub(crate) storages: Storages,
     pub(crate) bundles: Bundles,
     pub(crate) observers: Observers,
+    pub(crate) query_cache: HashMap<TypeId, Entity>,
     pub(crate) removed_components: RemovedComponentEvents,
     /// Access cache used by [`WorldCell`]. Is only accessed in the `Drop` impl of `WorldCell`.
     pub(crate) archetype_component_access: ArchetypeComponentAccess,
@@ -97,6 +98,7 @@ impl Default for World {
             storages: Default::default(),
             bundles: Default::default(),
             observers: Observers::default(),
+            query_cache: HashMap::default(),
             removed_components: Default::default(),
             archetype_component_access: Default::default(),
             // Default value is `1`, and `last_change_tick`s default to `0`, such that changes
@@ -997,7 +999,7 @@ impl World {
     /// ]).collect::<Vec<Entity>>();
     ///
     /// let mut query = world.query::<(&mut Position, &Velocity)>();
-    /// for (mut position, velocity) in query.iter_mut(&mut world) {
+    /// for (mut position, velocity) in query.iter_mut() {
     ///    position.x += velocity.x;
     ///    position.y += velocity.y;
     /// }
@@ -1024,7 +1026,7 @@ impl World {
     /// let b = world.spawn((Order(3), Label("third"))).id();
     /// let c = world.spawn((Order(1), Label("first"))).id();
     /// let mut entities = world.query::<(Entity, &Order, &Label)>()
-    ///     .iter(&world)
+    ///     .iter()
     ///     .collect::<Vec<_>>();
     /// // Sort the query results by their `Order` component before comparing
     /// // to expected results. Query iteration order should not be relied on.
@@ -1036,7 +1038,7 @@ impl World {
     /// ]);
     /// ```
     #[inline]
-    pub fn query<D: QueryData>(&mut self) -> QueryState<D, ()> {
+    pub fn query<D: QueryData + 'static>(&mut self) -> Query<D, ()> {
         self.query_filtered::<D, ()>()
     }
 
@@ -1060,8 +1062,31 @@ impl World {
     /// assert_eq!(matching_entities, vec![e2]);
     /// ```
     #[inline]
-    pub fn query_filtered<D: QueryData, F: QueryFilter>(&mut self) -> QueryState<D, F> {
-        QueryState::new(self)
+    // TODO: &self variants?
+    pub fn query_filtered<D: QueryData + 'static, F: QueryFilter + 'static>(
+        &mut self,
+    ) -> Query<D, F> {
+        let mut cache = std::mem::take(&mut self.query_cache);
+        let entity = *cache.entry(TypeId::of::<(D, F)>()).or_insert_with(|| {
+            let state = QueryState::<D, F>::new(self);
+            self.spawn(state).id()
+        });
+        self.query_cache = cache;
+        let world = self.as_unsafe_world_cell();
+        unsafe {
+            let state = world
+                .get_entity(entity)
+                .unwrap()
+                .get::<QueryState<D, F>>()
+                .unwrap();
+            Query::new(
+                world,
+                state,
+                entity,
+                world.last_change_tick(),
+                world.change_tick(),
+            )
+        }
     }
 
     /// Returns an iterator of entities that had components of type `T` removed
@@ -2066,6 +2091,7 @@ impl World {
 
     /// Despawns all entities in this [`World`].
     pub fn clear_entities(&mut self) {
+        self.query_cache.clear();
         self.storages.tables.clear();
         self.storages.sparse_sets.clear_entities();
         self.archetypes.clear_entities();

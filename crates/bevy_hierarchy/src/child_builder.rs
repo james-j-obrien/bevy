@@ -1237,8 +1237,8 @@ mod tests {
             .push_children(&[child])
             .id();
 
-        let mut query = world.query::<&Children>();
-        let children = query.get(&world, parent).unwrap();
+        let query = world.query::<&Children>();
+        let children = query.get(parent).unwrap();
         assert_eq!(**children, [child]);
     }
 }

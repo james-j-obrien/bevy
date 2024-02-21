@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{any::TypeId, ops::Deref};
 
 use crate::{
     archetype::Archetype,
@@ -115,17 +115,22 @@ impl<'w> DeferredWorld<'w> {
     /// # Panics
     /// If state is from a different world then self
     #[inline]
-    pub fn query<'s, Q: QueryData, F: QueryFilter>(
-        &'w mut self,
-        state: &'s mut QueryState<Q, F>,
-    ) -> Query<'w, 's, Q, F> {
-        state.validate_world(self.world.id());
-        state.update_archetypes(self);
-        // SAFETY: We ran validate_world to ensure our state matches
+    pub fn query<D: QueryData + 'static, F: QueryFilter + 'static>(&mut self) -> Query<D, F> {
+        let entity = *self
+            .query_cache
+            .get(&TypeId::of::<(D, F)>())
+            .expect("Query must be created before it can be used in a deferred context");
         unsafe {
+            let state = self
+                .world
+                .get_entity(entity)
+                .unwrap()
+                .get::<QueryState<D, F>>()
+                .unwrap();
             Query::new(
                 self.world,
                 state,
+                entity,
                 self.world.last_change_tick(),
                 self.world.change_tick(),
             )

@@ -2631,7 +2631,7 @@ mod tests {
             unsafe { entity.insert_by_id(test_component_id, ptr) };
         });
 
-        let components: Vec<_> = world.query::<&TestComponent>().iter(&world).collect();
+        let components: Vec<_> = world.query::<&TestComponent>().iter().collect();
 
         assert_eq!(components, vec![&TestComponent(42)]);
 
@@ -2643,7 +2643,7 @@ mod tests {
             unsafe { entity.insert_by_ids(&[test_component_id], vec![ptr].into_iter()) };
         });
 
-        let components: Vec<_> = world.query::<&TestComponent>().iter(&world).collect();
+        let components: Vec<_> = world.query::<&TestComponent>().iter().collect();
 
         assert_eq!(components, vec![&TestComponent(42), &TestComponent(84)]);
     }
@@ -2668,7 +2668,7 @@ mod tests {
 
         let dynamic_components: Vec<_> = world
             .query::<(&TestComponent, &TestComponent2)>()
-            .iter(&world)
+            .iter()
             .collect();
 
         assert_eq!(
@@ -2682,7 +2682,7 @@ mod tests {
         static_world.spawn((test_component_value, test_component_2_value));
         let static_components: Vec<_> = static_world
             .query::<(&TestComponent, &TestComponent2)>()
-            .iter(&static_world)
+            .iter()
             .collect();
 
         assert_eq!(dynamic_components, static_components);

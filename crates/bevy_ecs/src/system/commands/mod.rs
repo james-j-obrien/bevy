@@ -1268,7 +1268,7 @@ mod tests {
         assert_eq!(world.entities().len(), 1);
         let results = world
             .query::<(&W<u32>, &W<u64>)>()
-            .iter(&world)
+            .iter()
             .map(|(a, b)| (a.0, b.0))
             .collect::<Vec<_>>();
         assert_eq!(results, vec![(1u32, 2u64)]);
@@ -1281,7 +1281,7 @@ mod tests {
         command_queue.apply(&mut world);
         let results2 = world
             .query::<(&W<u32>, &W<u64>)>()
-            .iter(&world)
+            .iter()
             .map(|(a, b)| (a.0, b.0))
             .collect::<Vec<_>>();
         assert_eq!(results2, vec![]);
@@ -1301,7 +1301,7 @@ mod tests {
         command_queue.apply(&mut world);
         let results3 = world
             .query::<(&W<u32>, &W<u64>)>()
-            .iter(&world)
+            .iter()
             .map(|(a, b)| (a.0, b.0))
             .collect::<Vec<_>>();
 
@@ -1323,7 +1323,7 @@ mod tests {
         command_queue.apply(&mut world);
         let results_before = world
             .query::<(&W<u32>, &W<u64>)>()
-            .iter(&world)
+            .iter()
             .map(|(a, b)| (a.0, b.0))
             .collect::<Vec<_>>();
         assert_eq!(results_before, vec![(1u32, 2u64)]);
@@ -1342,13 +1342,13 @@ mod tests {
 
         let results_after = world
             .query::<(&W<u32>, &W<u64>)>()
-            .iter(&world)
+            .iter()
             .map(|(a, b)| (a.0, b.0))
             .collect::<Vec<_>>();
         assert_eq!(results_after, vec![]);
         let results_after_u64 = world
             .query::<&W<u64>>()
-            .iter(&world)
+            .iter()
             .map(|v| v.0)
             .collect::<Vec<_>>();
         assert_eq!(results_after_u64, vec![]);

@@ -345,7 +345,7 @@ mod tests {
         change_detection::DetectChanges,
         component::{Component, Components, Tick},
         entity::{Entities, Entity},
-        prelude::AnyOf,
+        prelude::{AnyOf, QueryState},
         query::{Added, Changed, Or, With, Without},
         removal_detection::RemovedComponents,
         schedule::{
@@ -1225,7 +1225,7 @@ mod tests {
 
         struct State {
             state: SystemState<Res<'static, A>>,
-            state_q: SystemState<Query<'static, 'static, &'static A>>,
+            state_q: SystemState<Query<'static, &'static A>>,
         }
 
         impl State {
@@ -1509,12 +1509,13 @@ mod tests {
     fn query_validates_world_id() {
         let mut world1 = World::new();
         let world2 = World::new();
-        let qstate = world1.query::<()>();
+        let qstate = QueryState::<()>::new(&mut world1);
         // SAFETY: doesnt access anything
         let query = unsafe {
             Query::new(
                 world2.as_unsafe_world_cell_readonly(),
                 &qstate,
+                Entity::PLACEHOLDER,
                 Tick::new(0),
                 Tick::new(0),
             )
@@ -1552,7 +1553,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn static_system_param(_: StaticSystemParam<Query<'static, 'static, &W<u32>>>) {
+        fn static_system_param(_: StaticSystemParam<Query<'static, &W<u32>>>) {
             unimplemented!()
         }
 

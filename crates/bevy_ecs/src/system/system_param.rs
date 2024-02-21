@@ -4,7 +4,7 @@ use crate::{
     bundle::Bundles,
     change_detection::{Ticks, TicksMut},
     component::{ComponentId, ComponentTicks, Components, Tick},
-    entity::Entities,
+    entity::{Entities, Entity},
     query::{
         Access, FilteredAccess, FilteredAccessSet, QueryData, QueryFilter, QueryState,
         ReadOnlyQueryData,
@@ -186,19 +186,20 @@ pub unsafe trait ReadOnlySystemParam: SystemParam {}
 pub type SystemParamItem<'w, 's, P> = <P as SystemParam>::Item<'w, 's>;
 
 // SAFETY: QueryState is constrained to read-only fetches, so it only reads World.
-unsafe impl<'w, 's, D: ReadOnlyQueryData + 'static, F: QueryFilter + 'static> ReadOnlySystemParam
-    for Query<'w, 's, D, F>
+unsafe impl<'w, D: ReadOnlyQueryData + 'static, F: QueryFilter + 'static> ReadOnlySystemParam
+    for Query<'w, D, F>
 {
 }
 
 // SAFETY: Relevant query ComponentId and ArchetypeComponentId access is applied to SystemMeta. If
 // this Query conflicts with any prior access, a panic will occur.
-unsafe impl<D: QueryData + 'static, F: QueryFilter + 'static> SystemParam for Query<'_, '_, D, F> {
-    type State = QueryState<D, F>;
-    type Item<'w, 's> = Query<'w, 's, D, F>;
+unsafe impl<D: QueryData + 'static, F: QueryFilter + 'static> SystemParam for Query<'_, D, F> {
+    type State = Entity;
+    type Item<'w, 's> = Query<'w, D, F>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
-        let state = QueryState::new(world);
+        let entity = world.query_filtered::<D, F>().id();
+        let state = world.entity(entity).get::<QueryState<D, F>>().unwrap();
         assert_component_access_compatibility(
             &system_meta.name,
             std::any::type_name::<D>(),
@@ -213,19 +214,12 @@ unsafe impl<D: QueryData + 'static, F: QueryFilter + 'static> SystemParam for Qu
         system_meta
             .archetype_component_access
             .extend(&state.archetype_component_access);
-        state
-    }
-
-    fn new_archetype(state: &mut Self::State, archetype: &Archetype, system_meta: &mut SystemMeta) {
-        state.new_archetype(archetype);
-        system_meta
-            .archetype_component_access
-            .extend(&state.archetype_component_access);
+        entity
     }
 
     #[inline]
     unsafe fn get_param<'w, 's>(
-        state: &'s mut Self::State,
+        &mut entity: &'s mut Self::State,
         system_meta: &SystemMeta,
         world: UnsafeWorldCell<'w>,
         change_tick: Tick,
@@ -233,7 +227,12 @@ unsafe impl<D: QueryData + 'static, F: QueryFilter + 'static> SystemParam for Qu
         // SAFETY: We have registered all of the query's world accesses,
         // so the caller ensures that `world` has permission to access any
         // world data that the query needs.
-        Query::new(world, state, system_meta.last_run, change_tick)
+        let state = world
+            .get_entity(entity)
+            .expect("Query used in a system was despawned.")
+            .get::<QueryState<D, F>>()
+            .unwrap();
+        Query::new(world, state, entity, system_meta.last_run, change_tick)
     }
 }
 
@@ -1398,7 +1397,7 @@ all_tuples!(impl_system_param_tuple, 0, 16, P);
 /// [`SystemParam`]: super::SystemParam
 pub mod lifetimeless {
     /// A [`Query`](super::Query) with `'static` lifetimes.
-    pub type SQuery<D, F = ()> = super::Query<'static, 'static, D, F>;
+    pub type SQuery<D, F = ()> = super::Query<'static, D, F>;
     /// A shorthand for writing `&'static T`.
     pub type Read<T> = &'static T;
     /// A shorthand for writing `&'static mut T`.
@@ -1555,11 +1554,10 @@ mod tests {
         #[derive(SystemParam)]
         pub struct SpecialQuery<
             'w,
-            's,
             D: QueryData + Send + Sync + 'static,
             F: QueryFilter + Send + Sync + 'static = (),
         > {
-            _query: Query<'w, 's, D, F>,
+            _query: Query<'w, D, F>,
         }
 
         fn my_system(_: SpecialQuery<(), ()>) {}
@@ -1676,11 +1674,11 @@ mod tests {
     #[test]
     fn system_param_where_clause() {
         #[derive(SystemParam)]
-        pub struct WhereParam<'w, 's, D>
+        pub struct WhereParam<'w, D>
         where
             D: 'static + QueryData,
         {
-            _q: Query<'w, 's, D, ()>,
+            _q: Query<'w, D, ()>,
         }
 
         fn my_system(_: WhereParam<()>) {}
@@ -1707,7 +1705,7 @@ mod tests {
     fn system_param_invariant_lifetime() {
         #[derive(SystemParam)]
         pub struct InvariantParam<'w, 's> {
-            _set: ParamSet<'w, 's, (Query<'w, 's, ()>,)>,
+            _set: ParamSet<'w, 's, (Query<'w, ()>,)>,
         }
 
         fn my_system(_: InvariantParam) {}

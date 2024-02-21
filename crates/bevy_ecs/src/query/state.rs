@@ -1,8 +1,13 @@
+use super::{
+    NopWorldQuery, QueryBuilder, QueryData, QueryEntityError, QueryFilter, QueryManyIter,
+    QuerySingleError, ROQueryItem,
+};
+use crate as bevy_ecs;
 use crate::{
     archetype::{Archetype, ArchetypeComponentId, ArchetypeGeneration, ArchetypeId},
     component::{ComponentId, Tick},
     entity::Entity,
-    prelude::FromWorld,
+    prelude::{Component, FromWorld},
     query::{
         Access, BatchingStrategy, DebugCheckedUnwrap, FilteredAccess, QueryCombinationIter,
         QueryIter, QueryParIter,
@@ -15,16 +20,13 @@ use bevy_utils::tracing::Span;
 use fixedbitset::FixedBitSet;
 use std::{borrow::Borrow, fmt, mem::MaybeUninit, ptr};
 
-use super::{
-    NopWorldQuery, QueryBuilder, QueryData, QueryEntityError, QueryFilter, QueryManyIter,
-    QuerySingleError, ROQueryItem,
-};
-
 /// Provides scoped access to a [`World`] state according to a given [`QueryData`] and [`QueryFilter`].
+#[derive(Component)]
 #[repr(C)]
 // SAFETY NOTE:
 // Do not add any new fields that use the `D` or `F` generic parameters as this may
 // make `QueryState::as_transmuted_state` unsound if not done with care.
+// TODO: Take private and spawn observer
 pub struct QueryState<D: QueryData, F: QueryFilter = ()> {
     world_id: WorldId,
     pub(crate) archetype_generation: ArchetypeGeneration,
@@ -54,7 +56,7 @@ impl<D: QueryData, F: QueryFilter> fmt::Debug for QueryState<D, F> {
 
 impl<D: QueryData, F: QueryFilter> FromWorld for QueryState<D, F> {
     fn from_world(world: &mut World) -> Self {
-        world.query_filtered()
+        QueryState::<D, F>::new(world)
     }
 }
 
@@ -439,7 +441,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// world.spawn(A(73));
     ///
-    /// let mut query_state = world.query::<&A>();
+    /// let mut query_state = QueryState::<&A>();
     ///
     /// let component_values = query_state.get_many(&world, entities).unwrap();
     ///
@@ -510,7 +512,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// world.spawn(A(73));
     ///
-    /// let mut query_state = world.query::<&mut A>();
+    /// let mut query_state = QueryState::<&mut A>();
     ///
     /// let mut mutable_component_values = query_state.get_many_mut(&mut world, entities).unwrap();
     ///
@@ -717,7 +719,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// This can only be called for read-only queries, see [`Self::iter_mut`] for write-queries.
     #[inline]
-    pub fn iter<'w, 's>(&'s mut self, world: &'w World) -> QueryIter<'w, 's, D::ReadOnly, F> {
+    pub fn iter<'w>(&'w mut self, world: &'w World) -> QueryIter<'w, D::ReadOnly, F> {
         self.update_archetypes(world);
         // SAFETY: query is read only
         unsafe {
@@ -731,7 +733,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
 
     /// Returns an [`Iterator`] over the query results for the given [`World`].
     #[inline]
-    pub fn iter_mut<'w, 's>(&'s mut self, world: &'w mut World) -> QueryIter<'w, 's, D, F> {
+    pub fn iter_mut<'w>(&'w mut self, world: &'w mut World) -> QueryIter<'w, D, F> {
         self.update_archetypes(world);
         let change_tick = world.change_tick();
         let last_change_tick = world.last_change_tick();
@@ -746,7 +748,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// This can only be called for read-only queries.
     #[inline]
-    pub fn iter_manual<'w, 's>(&'s self, world: &'w World) -> QueryIter<'w, 's, D::ReadOnly, F> {
+    pub fn iter_manual<'w>(&'w self, world: &'w World) -> QueryIter<'w, D::ReadOnly, F> {
         self.validate_world(world.id());
         // SAFETY: query is read only and world is validated
         unsafe {
@@ -780,10 +782,10 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This can only be called for read-only queries, see [`Self::iter_combinations_mut`] for
     /// write-queries.
     #[inline]
-    pub fn iter_combinations<'w, 's, const K: usize>(
-        &'s mut self,
+    pub fn iter_combinations<'w, const K: usize>(
+        &'w mut self,
         world: &'w World,
-    ) -> QueryCombinationIter<'w, 's, D::ReadOnly, F, K> {
+    ) -> QueryCombinationIter<'w, D::ReadOnly, F, K> {
         self.update_archetypes(world);
         // SAFETY: query is read only
         unsafe {
@@ -813,10 +815,10 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// The `iter_combinations_mut` method does not guarantee order of iteration.
     #[inline]
-    pub fn iter_combinations_mut<'w, 's, const K: usize>(
-        &'s mut self,
+    pub fn iter_combinations_mut<'w, const K: usize>(
+        &'w mut self,
         world: &'w mut World,
-    ) -> QueryCombinationIter<'w, 's, D, F, K> {
+    ) -> QueryCombinationIter<'w, D, F, K> {
         self.update_archetypes(world);
         let change_tick = world.change_tick();
         let last_change_tick = world.last_change_tick();
@@ -839,11 +841,11 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// - [`iter_many_mut`](Self::iter_many_mut) to get mutable query items.
     #[inline]
-    pub fn iter_many<'w, 's, EntityList: IntoIterator>(
-        &'s mut self,
+    pub fn iter_many<'w, EntityList: IntoIterator>(
+        &'w mut self,
         world: &'w World,
         entities: EntityList,
-    ) -> QueryManyIter<'w, 's, D::ReadOnly, F, EntityList::IntoIter>
+    ) -> QueryManyIter<D::ReadOnly, F, EntityList::IntoIter>
     where
         EntityList::Item: Borrow<Entity>,
     {
@@ -874,11 +876,11 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// - [`iter_many`](Self::iter_many) to update archetypes.
     /// - [`iter_manual`](Self::iter_manual) to iterate over all query items.
     #[inline]
-    pub fn iter_many_manual<'w, 's, EntityList: IntoIterator>(
-        &'s self,
+    pub fn iter_many_manual<'w, EntityList: IntoIterator>(
+        &'w self,
         world: &'w World,
         entities: EntityList,
-    ) -> QueryManyIter<'w, 's, D::ReadOnly, F, EntityList::IntoIter>
+    ) -> QueryManyIter<'w, D::ReadOnly, F, EntityList::IntoIter>
     where
         EntityList::Item: Borrow<Entity>,
     {
@@ -899,11 +901,11 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// Items are returned in the order of the list of entities.
     /// Entities that don't match the query are skipped.
     #[inline]
-    pub fn iter_many_mut<'w, 's, EntityList: IntoIterator>(
-        &'s mut self,
+    pub fn iter_many_mut<'w, EntityList: IntoIterator>(
+        &'w mut self,
         world: &'w mut World,
         entities: EntityList,
-    ) -> QueryManyIter<'w, 's, D, F, EntityList::IntoIter>
+    ) -> QueryManyIter<'w, D, F, EntityList::IntoIter>
     where
         EntityList::Item: Borrow<Entity>,
     {
@@ -928,10 +930,10 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
     /// have unique access to the components they query.
     #[inline]
-    pub unsafe fn iter_unchecked<'w, 's>(
-        &'s mut self,
+    pub unsafe fn iter_unchecked<'w>(
+        &'w mut self,
         world: UnsafeWorldCell<'w>,
-    ) -> QueryIter<'w, 's, D, F> {
+    ) -> QueryIter<'w, D, F> {
         self.update_archetypes_unsafe_world_cell(world);
         self.iter_unchecked_manual(world, world.last_change_tick(), world.change_tick())
     }
@@ -945,10 +947,10 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This does not check for mutable query correctness. To be safe, make sure mutable queries
     /// have unique access to the components they query.
     #[inline]
-    pub unsafe fn iter_combinations_unchecked<'w, 's, const K: usize>(
-        &'s mut self,
+    pub unsafe fn iter_combinations_unchecked<'w, const K: usize>(
+        &'w mut self,
         world: UnsafeWorldCell<'w>,
-    ) -> QueryCombinationIter<'w, 's, D, F, K> {
+    ) -> QueryCombinationIter<'w, D, F, K> {
         self.update_archetypes_unsafe_world_cell(world);
         self.iter_combinations_unchecked_manual(
             world,
@@ -967,12 +969,12 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This does not validate that `world.id()` matches `self.world_id`. Calling this on a `world`
     /// with a mismatched [`WorldId`] is unsound.
     #[inline]
-    pub(crate) unsafe fn iter_unchecked_manual<'w, 's>(
-        &'s self,
+    pub(crate) unsafe fn iter_unchecked_manual<'w>(
+        &'w self,
         world: UnsafeWorldCell<'w>,
         last_run: Tick,
         this_run: Tick,
-    ) -> QueryIter<'w, 's, D, F> {
+    ) -> QueryIter<'w, D, F> {
         QueryIter::new(world, self, last_run, this_run)
     }
 
@@ -987,13 +989,13 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This does not validate that `world.id()` matches `self.world_id`. Calling this on a `world`
     /// with a mismatched [`WorldId`] is unsound.
     #[inline]
-    pub(crate) unsafe fn iter_many_unchecked_manual<'w, 's, EntityList: IntoIterator>(
-        &'s self,
+    pub(crate) unsafe fn iter_many_unchecked_manual<'w, EntityList: IntoIterator>(
+        &'w self,
         entities: EntityList,
         world: UnsafeWorldCell<'w>,
         last_run: Tick,
         this_run: Tick,
-    ) -> QueryManyIter<'w, 's, D, F, EntityList::IntoIter>
+    ) -> QueryManyIter<'w, D, F, EntityList::IntoIter>
     where
         EntityList::Item: Borrow<Entity>,
     {
@@ -1011,12 +1013,12 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// This does not validate that `world.id()` matches `self.world_id`. Calling this on a `world`
     /// with a mismatched [`WorldId`] is unsound.
     #[inline]
-    pub(crate) unsafe fn iter_combinations_unchecked_manual<'w, 's, const K: usize>(
-        &'s self,
+    pub(crate) unsafe fn iter_combinations_unchecked_manual<'w, const K: usize>(
+        &'w self,
         world: UnsafeWorldCell<'w>,
         last_run: Tick,
         this_run: Tick,
-    ) -> QueryCombinationIter<'w, 's, D, F, K> {
+    ) -> QueryCombinationIter<'w, D, F, K> {
         QueryCombinationIter::new(world, self, last_run, this_run)
     }
 
@@ -1029,10 +1031,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     ///
     /// [`par_iter_mut`]: Self::par_iter_mut
     #[inline]
-    pub fn par_iter<'w, 's>(
-        &'s mut self,
-        world: &'w World,
-    ) -> QueryParIter<'w, 's, D::ReadOnly, F> {
+    pub fn par_iter<'w>(&'w mut self, world: &'w World) -> QueryParIter<'w, D::ReadOnly, F> {
         self.update_archetypes(world);
         QueryParIter {
             world: world.as_unsafe_world_cell_readonly(),
@@ -1063,7 +1062,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// # let entities: Vec<Entity> = (0..3).map(|i| world.spawn(A(i)).id()).collect();
     /// # let entities: [Entity; 3] = entities.try_into().unwrap();
     ///
-    /// let mut query_state = world.query::<&mut A>();
+    /// let mut query_state = QueryState::<&mut A>();
     ///
     /// query_state.par_iter_mut(&mut world).for_each(|mut a| {
     ///     a.0 += 5;
@@ -1088,7 +1087,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// [`par_iter`]: Self::par_iter
     /// [`ComputeTaskPool`]: bevy_tasks::ComputeTaskPool
     #[inline]
-    pub fn par_iter_mut<'w, 's>(&'s mut self, world: &'w mut World) -> QueryParIter<'w, 's, D, F> {
+    pub fn par_iter_mut<'w>(&'w mut self, world: &'w mut World) -> QueryParIter<'w, D, F> {
         self.update_archetypes(world);
         let this_run = world.change_tick();
         let last_run = world.last_change_tick();
@@ -1122,7 +1121,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
         'w,
         FN: Fn(D::Item<'w>) + Send + Sync + Clone,
     >(
-        &self,
+        &'w self,
         world: UnsafeWorldCell<'w>,
         batch_size: usize,
         func: FN,
@@ -1200,7 +1199,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// [`get_single`](Self::get_single) to return a `Result` instead of panicking.
     #[track_caller]
     #[inline]
-    pub fn single<'w>(&mut self, world: &'w World) -> ROQueryItem<'w, D> {
+    pub fn single<'w>(&'w mut self, world: &'w World) -> ROQueryItem<'w, D> {
         match self.get_single(world) {
             Ok(items) => items,
             Err(error) => panic!("Cannot get single mutable query result: {error}"),
@@ -1217,7 +1216,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// instead.
     #[inline]
     pub fn get_single<'w>(
-        &mut self,
+        &'w mut self,
         world: &'w World,
     ) -> Result<ROQueryItem<'w, D>, QuerySingleError> {
         self.update_archetypes(world);
@@ -1241,7 +1240,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// [`get_single_mut`](Self::get_single_mut) to return a `Result` instead of panicking.
     #[track_caller]
     #[inline]
-    pub fn single_mut<'w>(&mut self, world: &'w mut World) -> D::Item<'w> {
+    pub fn single_mut<'w>(&'w mut self, world: &'w mut World) -> D::Item<'w> {
         // SAFETY: query has unique world access
         match self.get_single_mut(world) {
             Ok(items) => items,
@@ -1256,7 +1255,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// instead.
     #[inline]
     pub fn get_single_mut<'w>(
-        &mut self,
+        &'w mut self,
         world: &'w mut World,
     ) -> Result<D::Item<'w>, QuerySingleError> {
         self.update_archetypes(world);
@@ -1284,7 +1283,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// have unique access to the components they query.
     #[inline]
     pub unsafe fn get_single_unchecked<'w>(
-        &mut self,
+        &'w mut self,
         world: UnsafeWorldCell<'w>,
     ) -> Result<D::Item<'w>, QuerySingleError> {
         self.update_archetypes_unsafe_world_cell(world);
@@ -1303,7 +1302,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
     /// have unique access to the components they query.
     #[inline]
     pub unsafe fn get_single_unchecked_manual<'w>(
-        &self,
+        &'w self,
         world: UnsafeWorldCell<'w>,
         last_run: Tick,
         this_run: Tick,
@@ -1340,7 +1339,7 @@ mod tests {
 
         let entities: Vec<Entity> = (0..10).map(|_| world.spawn_empty().id()).collect();
 
-        let query_state = world.query::<Entity>();
+        let query_state = QueryState::<Entity>::new(&mut world);
 
         // These don't matter for the test
         let last_change_tick = world.last_change_tick();
@@ -1414,7 +1413,7 @@ mod tests {
         let mut world_1 = World::new();
         let world_2 = World::new();
 
-        let mut query_state = world_1.query::<Entity>();
+        let mut query_state = QueryState::<Entity>::new(&mut world_1);
         let _panics = query_state.get(&world_2, Entity::from_raw(0));
     }
 
@@ -1424,7 +1423,7 @@ mod tests {
         let mut world_1 = World::new();
         let world_2 = World::new();
 
-        let mut query_state = world_1.query::<Entity>();
+        let mut query_state = QueryState::<Entity>::new(&mut world_1);
         let _panics = query_state.get_many(&world_2, []);
     }
 
@@ -1434,7 +1433,7 @@ mod tests {
         let mut world_1 = World::new();
         let mut world_2 = World::new();
 
-        let mut query_state = world_1.query::<Entity>();
+        let mut query_state = QueryState::<Entity>::new(&mut world_1);
         let _panics = query_state.get_many_mut(&mut world_2, []);
     }
 
@@ -1452,7 +1451,7 @@ mod tests {
         let mut world = World::new();
         world.spawn((A(1), B(0)));
 
-        let query_state = world.query::<(&A, &B)>();
+        let query_state = QueryState::<(&A, &B)>::new(&mut world);
         let mut new_query_state = query_state.transmute::<&A>(&world);
         assert_eq!(new_query_state.iter(&world).len(), 1);
         let a = new_query_state.single(&world);
@@ -1466,7 +1465,7 @@ mod tests {
         world.spawn((A(0), B(0)));
         world.spawn((A(1), B(0), C(0)));
 
-        let query_state = world.query_filtered::<(&A, &B), Without<C>>();
+        let query_state = QueryState::<(&A, &B), Without<C>>::new(&mut world);
         let mut new_query_state = query_state.transmute::<&A>(&world);
         // even though we change the query to not have Without<C>, we do not get the component with C.
         let a = new_query_state.single(&world);
@@ -1480,7 +1479,7 @@ mod tests {
         world.init_component::<A>();
         let entity = world.spawn(A(10)).id();
 
-        let q = world.query::<()>();
+        let q = QueryState::<()>::new(&mut world);
         let mut q = q.transmute::<Entity>(&world);
         assert_eq!(q.single(&world), entity);
     }
@@ -1490,11 +1489,11 @@ mod tests {
         let mut world = World::new();
         world.spawn(A(10));
 
-        let q = world.query::<&A>();
+        let q = QueryState::<&A>::new(&mut world);
         let mut new_q = q.transmute::<Ref<A>>(&world);
         assert!(new_q.single(&world).is_added());
 
-        let q = world.query::<Ref<A>>();
+        let q = QueryState::<Ref<A>>::new(&mut world);
         let _ = q.transmute::<&A>(&world);
     }
 
@@ -1503,7 +1502,7 @@ mod tests {
         let mut world = World::new();
         world.spawn(A(0));
 
-        let q = world.query::<&mut A>();
+        let q = QueryState::<&mut A>::new(&mut world);
         let _ = q.transmute::<Ref<A>>(&world);
         let _ = q.transmute::<&A>(&world);
     }
@@ -1513,7 +1512,7 @@ mod tests {
         let mut world = World::new();
         world.spawn(A(0));
 
-        let q: QueryState<EntityMut<'_>> = world.query::<EntityMut>();
+        let q: QueryState<EntityMut<'_>> = QueryState::<EntityMut>::new(&mut world);
         let _ = q.transmute::<EntityRef>(&world);
     }
 
@@ -1522,7 +1521,7 @@ mod tests {
         let mut world = World::new();
         world.spawn((A(0), B(0)));
 
-        let query_state = world.query::<(Option<&A>, &B)>();
+        let query_state = QueryState::<(Option<&A>, &B)>::new(&mut world);
         let _ = query_state.transmute::<Option<&A>>(&world);
         let _ = query_state.transmute::<&B>(&world);
     }
@@ -1537,7 +1536,7 @@ mod tests {
         world.init_component::<B>();
         world.spawn(A(0));
 
-        let query_state = world.query::<&A>();
+        let query_state = QueryState::<&A>::new(&mut world);
         let mut _new_query_state = query_state.transmute::<(&A, &B)>(&world);
     }
 
@@ -1549,7 +1548,7 @@ mod tests {
         let mut world = World::new();
         world.spawn(A(0));
 
-        let query_state = world.query::<&A>();
+        let query_state = QueryState::<&A>::new(&mut world);
         let mut _new_query_state = query_state.transmute::<&mut A>(&world);
     }
 
@@ -1561,7 +1560,7 @@ mod tests {
         let mut world = World::new();
         world.spawn(C(0));
 
-        let query_state = world.query::<Option<&A>>();
+        let query_state = QueryState::<Option<&A>>::new(&mut world);
         let mut new_query_state = query_state.transmute::<&A>(&world);
         let x = new_query_state.single(&world);
         assert_eq!(x.0, 1234);
@@ -1575,7 +1574,7 @@ mod tests {
         let mut world = World::new();
         world.init_component::<A>();
 
-        let q = world.query::<EntityRef>();
+        let q = QueryState::<EntityRef>::new(&mut world);
         let _ = q.transmute::<&A>(&world);
     }
 
