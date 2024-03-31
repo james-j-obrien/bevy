@@ -2,7 +2,9 @@ use super::{
     NopWorldQuery, QueryBuilder, QueryData, QueryEntityError, QueryFilter, QueryManyIter,
     QuerySingleError, ROQueryItem,
 };
-use crate as bevy_ecs;
+use crate::archetype::ArchetypeCreated;
+use crate::component::{ComponentInfo, SparseStorage};
+use crate::observer::ObserverBuilder;
 use crate::{
     archetype::{Archetype, ArchetypeComponentId, ArchetypeGeneration, ArchetypeId},
     component::{ComponentId, Tick},
@@ -21,7 +23,6 @@ use fixedbitset::FixedBitSet;
 use std::{borrow::Borrow, fmt, mem::MaybeUninit, ptr};
 
 /// Provides scoped access to a [`World`] state according to a given [`QueryData`] and [`QueryFilter`].
-#[derive(Component)]
 #[repr(C)]
 // SAFETY NOTE:
 // Do not add any new fields that use the `D` or `F` generic parameters as this may
@@ -42,6 +43,24 @@ pub struct QueryState<D: QueryData, F: QueryFilter = ()> {
     pub(crate) filter_state: F::State,
     #[cfg(feature = "trace")]
     par_iter_span: Span,
+}
+
+impl<D: QueryData + 'static, F: QueryFilter + 'static> Component for QueryState<D, F> {
+    type Storage = SparseStorage;
+
+    fn init_component_info(info: &mut ComponentInfo) {
+        info.on_add(|mut world, entity, _| {
+            let mut builder =
+                ObserverBuilder::<ArchetypeCreated>::new_with_entity(world.commands(), entity);
+            builder.runner(|mut world, trigger, _| {
+                let archetype_id = trigger.location.archetype_id;
+                let archetype_ptr: *const Archetype = world.archetypes().get(archetype_id).unwrap();
+                let mut entity = world.entity_mut(trigger.observer);
+                let mut state = entity.get_mut::<QueryState<D, F>>().unwrap();
+                state.new_archetype(unsafe { &*archetype_ptr });
+            });
+        });
+    }
 }
 
 impl<D: QueryData, F: QueryFilter> fmt::Debug for QueryState<D, F> {

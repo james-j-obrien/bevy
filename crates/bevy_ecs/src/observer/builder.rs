@@ -6,6 +6,7 @@ use super::*;
 
 /// Builder struct for [`Observer`].
 pub struct ObserverBuilder<'w, E: EcsEvent = NoEvent> {
+    entity: Entity,
     commands: Commands<'w, 'w>,
     descriptor: ObserverDescriptor,
     _marker: PhantomData<E>,
@@ -13,7 +14,12 @@ pub struct ObserverBuilder<'w, E: EcsEvent = NoEvent> {
 
 impl<'w, E: EcsEvent> ObserverBuilder<'w, E> {
     /// Constructs a new [`ObserverBuilder`].
-    pub fn new(commands: Commands<'w, 'w>) -> Self {
+    pub fn new(mut commands: Commands<'w, 'w>) -> Self {
+        let entity = commands.spawn_empty().id();
+        Self::new_with_entity(commands, entity)
+    }
+
+    pub(crate) fn new_with_entity(commands: Commands<'w, 'w>, entity: Entity) -> Self {
         let mut descriptor = ObserverDescriptor::default();
         // TODO: Better messages
         let event = commands
@@ -30,6 +36,7 @@ impl<'w, E: EcsEvent> ObserverBuilder<'w, E> {
             descriptor.events.push(event);
         }
         Self {
+            entity,
             commands,
             descriptor,
             _marker: PhantomData,
@@ -100,7 +107,7 @@ impl<'w, E: EcsEvent> ObserverBuilder<'w, E> {
                 )
             }));
         });
-        let entity = self.commands.spawn_empty().id();
+        let entity = self.entity;
         let descriptor = self.descriptor.clone();
         self.commands.add(move |world: &mut World| {
             let component = ObserverComponent::from(world, descriptor, callback);
@@ -112,13 +119,9 @@ impl<'w, E: EcsEvent> ObserverBuilder<'w, E> {
     /// Spawns the resulting observer into the world using a [`ObserverRunner`] callback.
     /// This is not advised unless you want to override the default runner behaviour.
     pub fn runner(&mut self, runner: ObserverRunner) -> Entity {
-        let entity = self.commands.spawn_empty().id();
-        let descriptor = self.descriptor.clone();
-        self.commands.add(move |world: &mut World| {
-            let component = ObserverComponent::from_runner(descriptor, runner);
-            world.entity_mut(entity).insert(component);
-        });
-        entity
+        let component = ObserverComponent::from_runner(self.descriptor.clone(), runner);
+        self.commands.entity(self.entity).insert(component);
+        self.entity
     }
 }
 

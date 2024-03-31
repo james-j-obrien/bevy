@@ -86,10 +86,10 @@ pub(crate) struct ObserverDescriptor {
 
 /// Metadata for the source triggering an [`Observer`],
 pub struct ObserverTrigger {
-    observer: Entity,
-    location: EntityLocation,
-    event: ComponentId,
-    source: Entity,
+    pub observer: Entity,
+    pub location: EntityLocation,
+    pub event: ComponentId,
+    pub source: Entity,
 }
 
 // Map between an observer entity and it's runner

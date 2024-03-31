@@ -1066,6 +1066,7 @@ impl World {
     pub fn query_filtered<D: QueryData + 'static, F: QueryFilter + 'static>(
         &mut self,
     ) -> Query<D, F> {
+        self.flush_commands();
         let mut cache = std::mem::take(&mut self.query_cache);
         let entity = *cache.entry(TypeId::of::<(D, F)>()).or_insert_with(|| {
             let state = QueryState::<D, F>::new(self);
