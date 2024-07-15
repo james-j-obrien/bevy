@@ -431,7 +431,6 @@ pub fn batch_and_prepare_sorted_render_phase<I, GFBD>(
             let current_meta =
                 current_meta.map(|meta| BatchMeta::new(&phase.items[current_index], meta));
 
-
             // Determine if this entity can be included in the batch we're
             // building up.
             let can_batch = batch.as_ref().is_some_and(|batch| {
@@ -474,9 +473,9 @@ pub fn batch_and_prepare_sorted_render_phase<I, GFBD>(
 
             // Add a new preprocessing work item so that the preprocessing
             // shader will copy the per-instance data over.
-            if let Some(batch) = batch.as_ref() {            {
+            if let Some(batch) = batch.as_ref() {
                 work_item_buffer.buffer.push(PreprocessWorkItem {
-                    input_index: (*current_input_index).into(),
+                    input_index: current_input_index.into(),
                     output_index: match batch.indirect_parameters_index {
                         Some(indirect_parameters_index) => indirect_parameters_index.into(),
                         None => output_index,
